@@ -123,7 +123,7 @@ function clientLogin() {
   app.innerHTML = `
   <div class="phone">
     <svg class="login-wave" aria-hidden="true" viewBox="0 0 390 200" preserveAspectRatio="none"><path d="M0 100 C 110 40, 230 150, 390 70 L390 200 L0 200 Z" fill="#13235B"/><path d="M0 100 C 110 40, 230 150, 390 70" fill="none" stroke="#1BA6C2" stroke-width="4"/></svg>
-    <form class="phone-body" id="f" style="position:relative;z-index:1;padding-bottom:40px" novalidate>
+    <form class="phone-body" id="f" style="position:relative;z-index:1;padding-bottom:24px;min-height:100dvh" novalidate>
       <img class="logo-round" src="${LOGO}" alt="Puntos Santana – Santana del Río Mall Comercial">
       <div><h1 style="font-size:26px;font-weight:800">Consulta tus puntos</h1>
       <p class="muted" style="margin:4px 0 0;font-size:14px">Ingresa con tu cédula y tu PIN de 4 números.</p></div>
@@ -131,7 +131,7 @@ function clientLogin() {
       <div class="field"><label for="pin">PIN</label><input class="input pin" id="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" required></div>
       <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
       <button class="btn coral block" style="height:56px;font-size:17px">Entrar</button>
-      <p class="center small" style="margin:auto 0 0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos o Derek con tu cédula.</p>
+      <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos o Derek con tu cédula.</p>
     </form>
   </div>`;
   $('#ced').focus();
