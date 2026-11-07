@@ -45,7 +45,11 @@ const ERR = {
   SOLICITUD_NO_DISPONIBLE: 'Esta solicitud ya fue entregada o cancelada.',
   NO_AUTORIZADO: 'No tienes permiso para esta acción.',
   NO_ES_RECAUDADOR: 'Solo Pilatos o Derek pueden entregar premios.',
-  SOLO_ACUMULACIONES: 'Solo se pueden editar compras.'
+  SOLO_ACUMULACIONES: 'Solo se pueden editar compras.',
+  FACTURA_REQUERIDA: 'Escribe el número de la factura.',
+  FACTURA_USADA: 'Esa factura ya se usó para un sello.',
+  SELLO_HOY: 'Este cliente ya recibió su sello hoy (máximo 1 por día).',
+  TARJETA_LLENA: 'La tarjeta ya está completa: entrega el regalo primero.'
 };
 function errText(e) {
   const m = (e && (e.message || e.error || e)) + '';
@@ -147,13 +151,36 @@ function clientLogin() {
 
 async function loadInicio() { cInicio = await clientCall('cliente_inicio'); return cInicio; }
 
+/* Tarjeta digital de sellos (la ven el cliente y el personal) */
+function stampCard(d, quien) {
+  const meta = d.sellos_meta || 8;
+  const n = Math.min(d.sellos || 0, meta);
+  const det = d.sellos_detalle || [];
+  const llena = n >= meta;
+  const faltan = meta - n;
+  const slots = Array.from({ length: meta }, (_, i) => {
+    const ultimo = i === meta - 1;
+    if (i < n) {
+      const f = det[i] && det[i].fecha ? fdate(det[i].fecha).split(' ').slice(0, 2).join(' ') : '';
+      return `<div class="slot on" aria-label="Sello ${i + 1} obtenido${f ? ' el ' + f : ''}"><svg aria-hidden="true" viewBox="0 0 100 100" class="slot-sun"><circle cx="50" cy="50" r="26" fill="#F6A21E"/><g stroke="#EB5440" stroke-width="8" stroke-linecap="round"><path d="M50 6v12M50 82v12M6 50h12M82 50h12M19 19l8 8M73 73l8 8M81 19l-8 8M27 73l-8 8"/></g><path d="M38 51l8 8 16-17" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${esc(f)}</span></div>`;
+    }
+    return `<div class="slot ${ultimo ? 'gift' : ''}" aria-label="${ultimo ? 'Sello 8: regalo' : 'Sello ' + (i + 1) + ' pendiente'}">${ultimo ? ic('gift', 22, 2) + '<span>REGALO</span>' : `<b>${i + 1}</b>`}</div>`;
+  }).join('');
+  let pie;
+  if (llena) pie = quien === 'cliente' ? `<div class="sc-done">¡Tarjeta completa! Reclama tu regalo en caja: <b>${esc(d.regalo_sellos)}</b></div>` : `<div class="sc-done">Tarjeta completa. Entrega el regalo: <b>${esc(d.regalo_sellos)}</b></div>`;
+  else pie = `<div class="sc-foot">${faltan === 1 ? 'Te falta <b>1 sello</b>' : `Te faltan <b>${faltan} sellos</b>`} para tu regalo: ${esc(d.regalo_sellos)}</div>`;
+  if (quien !== 'cliente' && !llena) pie = pie.replace('Te falta', 'Le falta').replace('Te faltan', 'Le faltan').replace('tu regalo', 'el regalo');
+  return `<section class="stampcard" aria-label="Tarjeta de sellos">
+    <header><img src="${LOGO}" alt=""><div><b>Tarjeta de sellos</b><span>Restaurante · Santana del Río</span></div><em>${n}/${meta}</em></header>
+    <div class="slots">${slots}</div>
+    ${pie}
+    <div class="sc-rules">Presenta tu factura en caja para recibir tu sello · Máximo 1 sello por día${d.regalos_recibidos ? ` · Regalos recibidos: ${d.regalos_recibidos}` : ''}</div>
+  </section>`;
+}
+
 async function clientInicio() {
   app.innerHTML = `<div class="phone"><div class="phone-body"><div class="empty">Cargando…</div></div>${tabbar('inicio')}</div>`;
   let d; try { d = await loadInicio(); } catch (e) { if (tok()) toast(errText(e), true); return; }
-  const meta = d.sellos_meta || 8;
-  const stamps = Array.from({ length: meta }, (_, i) => i < d.sellos ? `<div class="stamp on" aria-label="Sello obtenido"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${ICON.check}</svg></div>` : '<div class="stamp" aria-label="Sello pendiente"></div>').join('');
-  const regaloPend = (d.solicitudes || []).some((s) => s.tipo === 'sellos');
-  const faltan = Math.max(0, meta - d.sellos);
   const pv = d.proximo_vencimiento;
   const mov = (d.movimientos || []).map((m) => {
     const red = m.tipo === 'redencion';
@@ -179,18 +206,11 @@ async function clientInicio() {
       <span class="lbl" style="font-size:12px">Ganas 25 puntos por cada $1.000 de compra</span>
       ${pv && pv.puntos ? `<div class="warn">${ic('clock', 20).replace('currentColor', '#FFD23F')}<span>${num(pv.puntos)} pts vencen el <b>${fdate(pv.fecha)}</b></span></div>` : ''}
     </section>
+    ${stampCard(d, 'cliente')}
     ${pend ? `<section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Premios por reclamar</h2>${pend}</section>` : ''}
-    <section class="card stack" style="gap:12px">
-      <div class="row between"><h2 style="font-size:16px;font-weight:800">Sellos Restaurante</h2><b style="color:var(--coral-t);font-size:13px">${Math.min(d.sellos, meta)} de ${meta}</b></div>
-      <div class="stamps">${stamps}</div>
-      ${d.sellos >= meta
-        ? (regaloPend ? '<span class="small">Tu regalo está listo. Reclámalo en Pilatos o Derek.</span>' : `<button class="btn coral" id="regalo">¡Pedir mi regalo!</button><span class="small muted">Regalo: ${esc(d.regalo_sellos)}</span>`)
-        : `<span class="small muted">Te ${faltan === 1 ? 'falta 1 sello' : `faltan ${faltan} sellos`} para tu regalo: ${esc(d.regalo_sellos)}. Máximo 1 sello por día.</span>`}
-    </section>
     <section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Últimos movimientos</h2>${mov}</section>
   </div>${tabbar('inicio')}</div>`;
   $('#salir').onclick = async () => { try { await rpc('cliente_salir', { p_token: tok() }); } catch {} setTok(null); cInicio = null; route(); };
-  const rg = $('#regalo'); if (rg) rg.onclick = async () => { rg.disabled = true; try { await clientCall('cliente_solicitar', { p_premio: null }); toast('¡Listo! Reclama tu regalo en Pilatos o Derek.'); clientInicio(); } catch (e) { toast(errText(e), true); rg.disabled = false; } };
   $$('[data-cancel]').forEach((b) => b.onclick = async () => { if (!confirm('¿Cancelar esta solicitud?')) return; try { await clientCall('cliente_cancelar', { p_solicitud: b.dataset.cancel }); toast('Solicitud cancelada.'); clientInicio(); } catch (e) { toast(errText(e), true); } });
 }
 
@@ -291,7 +311,7 @@ async function staffRoute(view) {
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
   staffShell(view);
   const box = $('#content');
-  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, dashboard: vDashboard, clientes: vClientes, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes };
+  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, clientes: vClientes, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes };
   (views[view] || vAcumular)(box);
 }
 
@@ -321,8 +341,8 @@ function staffShell(view) {
   const isAdmin = perfil.rol === 'admin';
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
-    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('clientes', 'users', 'Clientes y transacciones')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
-    : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('redimir', 'gift', 'Entregar premio')}</nav>`;
+    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('clientes', 'users', 'Clientes y transacciones')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
+    : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
   <div class="staff">
@@ -425,7 +445,7 @@ function vAcumular(box) {
           <span class="big" id="pts">+${num(Math.floor(valor / 1000) * ppm)}</span>
           <span class="small" style="color:#CFE9F0">${ppm} pts por cada $1.000 · vencen el ${fdate(venc)}</span>
         </div>
-        ${t && t.da_sellos ? `<div style="background:var(--sun);color:var(--navy);border-radius:14px;padding:12px 14px;font-size:13px;font-weight:700">${ficha.sello_hoy ? 'Hoy ya recibió su sello (máximo 1 por día).' : '+1 sello del Restaurante'}</div>` : ''}
+        ${t && t.da_sellos ? `<a href="#/personal/sellos" style="background:var(--sun);color:var(--navy);border-radius:14px;padding:12px 14px;font-size:13px;font-weight:700;text-decoration:none">Compra en el Restaurante: recuerda marcar el sello con la factura →</a>` : ''}
         <button class="btn coral block" id="reg" style="height:60px;font-size:17px" ${!tienda || !valor ? 'disabled' : ''}>Registrar compra</button>
       </section>
     </div>`;
@@ -441,6 +461,55 @@ function vAcumular(box) {
         toast(`+${num(r.puntos_ganados)} puntos${r.sello_ganado ? ' y +1 sello' : ''} para ${ficha.nombre}`);
         draw();
       } catch (er) { toast(errText(er), true); b.disabled = false; }
+    };
+  }
+  if (ficha) draw();
+}
+
+function vSellos(box) {
+  const s = searchBox(() => draw());
+  box.innerHTML = `<h1 style="font-size:28px;font-weight:800">Marcar sello</h1>
+  <p class="muted" style="margin:0">El cliente presenta su factura del Restaurante. Buscas su cédula, escribes el número de la factura y marcas el sello. Máximo 1 sello por día.</p>${s.html}<div id="sel"></div>`;
+  s.bind();
+  function draw() {
+    const box2 = $('#sel');
+    if (!ficha) { box2.innerHTML = ''; return; }
+    $('#sres').innerHTML = clientBar(ficha);
+    const meta = ficha.sellos_meta || 8;
+    const llena = ficha.sellos >= meta;
+    box2.innerHTML = `<div class="cols">
+      <div>${stampCard(ficha, 'personal')}</div>
+      ${llena ? `<form class="navy-card" id="gf" novalidate>
+          <h2 style="font-size:20px;font-weight:800">Entregar regalo</h2>
+          <p style="margin:0;color:#CFE9F0;font-size:14px">Regalo: <b style="color:#fff">${esc(ficha.regalo_sellos)}</b>. Pide al cliente su PIN para confirmar.</p>
+          <div class="field"><label for="g-pin">PIN del cliente</label><input class="input pin" id="g-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
+          <button class="btn coral block" style="height:56px">Confirmar entrega del regalo</button>
+          <span class="small" style="color:#CFE9F0">La tarjeta vuelve a empezar desde cero.</span>
+        </form>`
+      : `<form class="navy-card" id="sf2" novalidate>
+          <h2 style="font-size:20px;font-weight:800">Nuevo sello</h2>
+          ${ficha.sello_hoy ? '<div style="background:var(--sun);color:var(--navy);border-radius:14px;padding:12px 14px;font-size:14px;font-weight:700">Hoy ya recibió su sello. Puede volver mañana.</div>' : `
+          <div class="field"><label for="fac">Número de la factura</label><input class="input" id="fac" autocomplete="off" style="text-transform:uppercase" placeholder="Ej.: FE-10234"></div>
+          <button class="btn coral block" style="height:60px;font-size:17px">Marcar sello</button>`}
+        </form>`}
+    </div>`;
+    const sf2 = $('#sf2');
+    if (sf2 && $('#fac')) {
+      $('#fac').focus();
+      sf2.onsubmit = async (e) => {
+        e.preventDefault();
+        const f = $('#fac').value.trim(); if (!f) return toast(ERR.FACTURA_REQUERIDA, true);
+        const b = $('button', sf2); b.disabled = true;
+        try { ficha = await rpc('marcar_sello', { p_cedula: ficha.cedula, p_factura: f }); toast(`Sello marcado: ${ficha.sellos} de ${ficha.sellos_meta || 8}`); draw(); }
+        catch (er) { toast(errText(er), true); b.disabled = false; }
+      };
+    }
+    const gf = $('#gf');
+    if (gf) gf.onsubmit = async (e) => {
+      e.preventDefault();
+      const b = $('button', gf); b.disabled = true;
+      try { const r = await rpc('entregar_regalo_sellos', { p_cedula: ficha.cedula, p_pin: $('#g-pin').value }); ficha = r.cliente; toast('¡Regalo entregado! La tarjeta empieza de nuevo.'); draw(); }
+      catch (er) { toast(errText(er), true); b.disabled = false; $('#g-pin').value = ''; }
     };
   }
   if (ficha) draw();
