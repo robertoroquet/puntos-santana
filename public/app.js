@@ -4,7 +4,7 @@
 const CFG = window.PS_CONFIG;
 const sb = window.supabase.createClient(CFG.url, CFG.key, { auth: { persistSession: true, storageKey: 'ps_staff' } });
 const app = document.getElementById('app');
-const LOGO = 'logo.jpg';
+const LOGO = 'santana-logo.jpg';
 
 /* ---------- utilidades ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

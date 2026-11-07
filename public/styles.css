@@ -51,7 +51,7 @@ textarea.input{height:auto;padding:12px 16px;resize:vertical;font-weight:500}
 /* ========== Cliente (celular) ========== */
 .phone{max-width:480px;margin:0 auto;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;position:relative}
 .phone-body{flex:1;padding:24px 20px 110px;display:flex;flex-direction:column;gap:16px}
-.login-wave{position:fixed;left:0;right:0;bottom:0;height:200px;pointer-events:none;z-index:0}
+.login-wave{position:absolute;left:0;right:0;bottom:0;width:100%;height:200px;pointer-events:none;z-index:0}
 .logo-round{width:200px;height:200px;border-radius:50%;object-fit:cover;align-self:center}
 .balance{background:var(--navy);color:#fff;border-radius:24px;padding:22px;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:6px}
 .balance .sun{position:absolute;right:-30px;top:-30px;width:150px;height:150px}
