@@ -54,7 +54,11 @@ const ERR = {
   NOMBRE_NO_COINCIDE: 'La factura no está a nombre de este cliente. Solo el titular puede acumular sus facturas.',
   FACTURA_YA_ACUMULADA: 'Esa factura ya fue registrada en esa tienda.',
   SELLO_HOY: 'Este cliente ya recibió su sello hoy (máximo 1 por día).',
-  TARJETA_LLENA: 'La tarjeta ya está completa: entrega el regalo primero.'
+  TARJETA_LLENA: 'La tarjeta ya está completa: entrega el regalo primero.',
+  SIN_ACTIVAR: 'Tu cuenta aún no está activa. Acércate a Pilatos o Derek con tu cédula para activarla y crear tu PIN.',
+  YA_ACTIVO: 'Este cliente ya tiene su cuenta activa.',
+  CELULAR_INVALIDO: 'Escribe un celular válido.',
+  NACIMIENTO_INVALIDO: 'Revisa la fecha de nacimiento.'
 };
 function errText(e) {
   const m = (e && (e.message || e.error || e)) + '';
@@ -312,11 +316,11 @@ async function staffRoute(view) {
   if (!p) return staffLogin();
   const isAdmin = p.rol === 'admin';
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
-  const adminOnly = ['dashboard', 'clientes', 'premios', 'cupones', 'mensajes', 'ajustes'];
+  const adminOnly = ['dashboard', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
   staffShell(view);
   const box = $('#content');
-  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, clientes: vClientes, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes };
+  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes };
   (views[view] || vAcumular)(box);
 }
 
@@ -346,7 +350,7 @@ function staffShell(view) {
   const isAdmin = perfil.rol === 'admin';
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
-    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('clientes', 'users', 'Clientes y transacciones')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
+    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
     : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
@@ -365,13 +369,43 @@ function staffShell(view) {
 function clientBar(f) {
   if (!f) return '';
   const meta = f.sellos_meta || 8;
+  const cumple = f.cumple_hoy ? '<span class="pill sun">¡Cumple hoy!</span>' : (f.cumple_mes ? '<span class="pill sun">Cumple este mes</span>' : '');
+  const act = f.activo ? '' : `
+  <form class="card stack" id="actf" novalidate style="border-color:var(--yellow);background:#FFFBEA">
+    <div><b style="font-size:17px">Cliente sin activar</b><div class="small muted">Viene de la base de datos del mall. Puede acumular, pero para entrar a la app y redimir debe activar su cuenta: celular, PIN y autorización de datos.</div></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+      <div class="field"><label for="a-cel">Celular *</label><input class="input" id="a-cel" inputmode="tel"></div>
+      <div class="field"><label for="a-mail">Correo (opcional)</label><input class="input" id="a-mail" type="email"></div>
+      ${f.fecha_nacimiento ? '' : '<div class="field"><label for="a-nac">Fecha de nacimiento</label><input class="input" id="a-nac" type="date"></div>'}
+      <div class="field"><label for="a-pin">PIN (4 números) *</label><input class="input pin" id="a-pin" type="password" inputmode="numeric" maxlength="4"></div>
+      <div class="field"><label for="a-pin2">Repetir PIN *</label><input class="input pin" id="a-pin2" type="password" inputmode="numeric" maxlength="4"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="a-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012).</span></label>
+    <button class="btn coral" style="align-self:flex-start">Activar cuenta</button>
+  </form>`;
   return `<div class="card client-bar">
     <div class="avatar">${esc(ini(f.nombre))}</div>
-    <div style="flex:1;min-width:160px"><b style="font-size:18px">${esc(f.nombre)}</b><div class="small muted">C.C. ${esc(num(f.cedula))} · Cel. ••• ${esc(f.celular_fin)}</div></div>
+    <div style="flex:1;min-width:160px"><div class="row wrap" style="gap:8px"><b style="font-size:18px">${esc(f.nombre)}</b>${cumple}${f.activo ? '' : '<span class="pill" style="background:#FFE7A8">Sin activar</span>'}</div><div class="small muted">C.C. ${esc(num(f.cedula))}${f.celular_fin ? ' · Cel. ••• ' + esc(f.celular_fin) : ''}</div></div>
     <div class="kv"><span>Puntos</span><b>${num(f.puntos)}</b></div>
     <div class="kv"><span>Sellos</span><b style="color:var(--coral-t)">${f.sellos}/${meta}</b></div>
-  </div>`;
+  </div>${act}`;
 }
+// Activación de clientes importados (formulario dentro de la ficha)
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'actf') return;
+  e.preventDefault();
+  const f = e.target, v = (id) => (f.querySelector('#' + id) || {}).value || '';
+  if (digits(v('a-cel')).length < 7) return toast('Escribe el celular del cliente.', true);
+  if (!/^\d{4}$/.test(v('a-pin'))) return toast(ERR.PIN_INVALIDO, true);
+  if (v('a-pin') !== v('a-pin2')) return toast('Los dos PIN no coinciden.', true);
+  if (!f.querySelector('#a-ok').checked) return toast(ERR.SIN_AUTORIZACION_DATOS, true);
+  const b = f.querySelector('button'); b.disabled = true;
+  try {
+    ficha = await rpc('activar_cliente', { p_cedula: ficha.cedula, p_celular: v('a-cel'), p_correo: v('a-mail'), p_pin: v('a-pin'), p_acepta: true, p_nacimiento: v('a-nac') || null });
+    toast('Cuenta activada. Ya puede entrar a la app con su cédula y PIN.');
+    route();
+  } catch (er) { toast(errText(er), true); b.disabled = false; }
+});
 function searchBox(onFound) {
   return {
     html: `<form class="row wrap" id="sf" style="align-items:flex-end" novalidate>
@@ -403,6 +437,7 @@ function vNuevo(box) {
       <div class="field"><label for="n-mail">Correo (opcional)</label><input class="input" id="n-mail" type="email"></div>
       <div class="field"><label for="n-pin">PIN de 4 números (lo elige el cliente) *</label><input class="input pin" id="n-pin" type="password" inputmode="numeric" maxlength="4" required></div>
       <div class="field"><label for="n-pin2">Repetir PIN *</label><input class="input pin" id="n-pin2" type="password" inputmode="numeric" maxlength="4" required></div>
+      <div class="field"><label for="n-nac">Fecha de nacimiento *</label><input class="input" id="n-nac" type="date" max="${iso(new Date())}"></div>
     </div>
     <label class="check"><input type="checkbox" id="n-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012).</span></label>
     <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
@@ -415,10 +450,11 @@ function vNuevo(box) {
     if (!digits(v('n-ced')) || !v('n-nom') || digits(v('n-cel')).length < 7) { err.textContent = 'Completa cédula, nombre y celular.'; return; }
     if (!/^\d{4}$/.test(v('n-pin'))) { err.textContent = ERR.PIN_INVALIDO; return; }
     if (v('n-pin') !== v('n-pin2')) { err.textContent = 'Los dos PIN no coinciden.'; return; }
+    if (!v('n-nac')) { err.textContent = 'Escribe la fecha de nacimiento: con ella le enviamos su promoción de cumpleaños.'; return; }
     if (!$('#n-ok').checked) { err.textContent = ERR.SIN_AUTORIZACION_DATOS; return; }
     const b = $('button', $('#nf')); b.disabled = true;
     try {
-      ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true });
+      ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true, p_nacimiento: v('n-nac') });
       toast('Cliente inscrito. Ya puedes acumular su compra.');
       location.hash = '#/personal/acumular';
     } catch (er) { err.textContent = errText(er); b.disabled = false; }
@@ -612,20 +648,21 @@ let selCliente = null;
 async function vClientes(box) {
   box.innerHTML = `
   <div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Clientes y transacciones</h1>
-  <div class="row wrap"><button class="btn ghost sm" id="x-cli">Exportar clientes</button><button class="btn ghost sm" id="x-tx">Exportar transacciones</button></div></div>
+  <div class="row wrap"><button class="btn coral sm" id="imp">Importar clientes (Excel)</button><button class="btn ghost sm" id="x-cli">Exportar clientes</button><button class="btn ghost sm" id="x-tx">Exportar transacciones</button></div></div>
   <form class="row wrap" id="qf" novalidate><label for="q" class="hidden">Buscar</label><input class="input" id="q" placeholder="Buscar por cédula, nombre o celular" style="flex:1;min-width:240px"><button class="btn">Buscar</button></form>
   <div class="cols"><section class="card stack" id="lista"><div class="empty">Cargando…</div></section><section id="det"></section></div>`;
   const load = async (q) => {
     let rows; try { rows = await rpc('admin_clientes', { p_busqueda: q || '', p_limite: 200 }); } catch (e) { $('#lista').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
-    $('#lista').innerHTML = `<h2 style="font-size:17px;font-weight:800">Clientes (${rows.length}${rows.length === 200 ? '+' : ''})</h2>` + (rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Cédula</th><th style="text-align:right">Puntos</th><th style="text-align:right">Sellos</th></tr></thead><tbody>
-      ${rows.map((c) => `<tr class="clic ${selCliente === c.id ? 'sel' : ''}" data-c="${c.id}" tabindex="0"><td><b>${esc(c.nombre)}</b></td><td>${esc(num(c.cedula))}</td><td style="text-align:right;font-weight:700">${num(c.puntos)}</td><td style="text-align:right">${c.sellos}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin resultados.</div>');
+    $('#lista').innerHTML = `<h2 style="font-size:17px;font-weight:800">Clientes (${rows.length}${rows.length === 200 ? '+' : ''})</h2>` + (rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th><th style="text-align:right">Puntos</th><th style="text-align:right">Sellos</th></tr></thead><tbody>
+      ${rows.map((c) => `<tr class="clic ${selCliente === c.id ? 'sel' : ''}" data-c="${c.id}" tabindex="0"><td><b>${esc(c.nombre)}</b>${c.activo ? '' : ' <span class="pill" style="background:#FFE7A8;padding:2px 8px;font-size:10px">Sin activar</span>'}</td><td>${esc(num(c.cedula))}</td><td>${c.fecha_nacimiento ? fdate(c.fecha_nacimiento) : '—'}</td><td style="text-align:right;font-weight:700">${num(c.puntos)}</td><td style="text-align:right">${c.sellos}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin resultados.</div>');
     $$('[data-c]').forEach((tr) => { const go = () => { selCliente = tr.dataset.c; $$('[data-c]').forEach((x) => x.classList.toggle('sel', x === tr)); detalle(rows.find((x) => x.id === selCliente)); }; tr.onclick = go; tr.onkeydown = (e) => { if (e.key === 'Enter') go(); }; });
     if (selCliente) { const c = rows.find((x) => x.id === selCliente); if (c) detalle(c); }
   };
   $('#qf').onsubmit = (e) => { e.preventDefault(); load($('#q').value.trim()); };
+  $('#imp').onclick = () => importarClientes(() => load(''));
   $('#x-cli').onclick = async () => {
     try { const rows = await rpc('admin_clientes', { p_busqueda: '', p_limite: 100000 });
-      csv([['Cédula', 'Nombre', 'Celular', 'Correo', 'Puntos', 'Sellos', 'Inscrito en', 'Fecha inscripción'], ...rows.map((c) => [c.cedula, c.nombre, c.celular, c.correo, c.puntos, c.sellos, c.tienda_registro, (c.creado_en || '').slice(0, 10)])], 'clientes-puntos-santana.csv');
+      csv([['Cédula', 'Nombre', 'Fecha nacimiento', 'Celular', 'Correo', 'Activo', 'Puntos', 'Sellos', 'Inscrito en', 'Fecha inscripción'], ...rows.map((c) => [c.cedula, c.nombre, c.fecha_nacimiento, c.celular, c.correo, c.activo ? 'Sí' : 'No', c.puntos, c.sellos, c.tienda_registro, (c.creado_en || '').slice(0, 10)])], 'clientes-puntos-santana.csv');
     } catch (e) { toast(errText(e), true); }
   };
   $('#x-tx').onclick = async () => {
@@ -697,6 +734,118 @@ function dialog(inner, onOk, okLabel = 'Guardar') {
     catch (er) { toast(errText(er), true); b.disabled = false; }
   };
   const f = dl.querySelector('input,select,textarea'); if (f) f.focus();
+}
+
+/* ---- Importar clientes desde Excel ---- */
+let xlsxLib = null;
+function cargarXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (xlsxLib) return xlsxLib;
+  xlsxLib = new Promise((ok, fail) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; sc.onload = () => ok(window.XLSX); sc.onerror = () => { xlsxLib = null; fail(new Error('No se pudo cargar el lector de Excel')); }; document.head.appendChild(sc); });
+  return xlsxLib;
+}
+const normH = (h) => String(h || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+function fechaExcel(v) {
+  if (v == null || v === '') return '';
+  if (v instanceof Date && !isNaN(v)) return iso(new Date(v.getFullYear(), v.getMonth(), v.getDate()));
+  if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 86400000)); return iso(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); }
+  const t = String(v).trim();
+  let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/); // dd/mm/aaaa
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  return '';
+}
+function importarClientes(despues) {
+  let filas = [];
+  dialog(`<h2 style="font-size:20px;font-weight:800">Importar clientes desde Excel</h2>
+    <p class="muted small" style="margin:0">El archivo debe tener columnas con estos títulos: <b>Nombre</b>, <b>Cédula</b> y <b>Fecha de nacimiento</b> (día/mes/año). Si una cédula ya existe, no se duplica.</p>
+    <div class="field"><label for="i-f">Archivo (.xlsx, .xls o .csv)</label><input class="input" id="i-f" type="file" accept=".xlsx,.xls,.csv" style="padding:12px"></div>
+    <div id="i-prev" class="small"></div>`, async (dl) => {
+    if (!filas.length) { toast('Primero elige un archivo con clientes.', true); return false; }
+    let nuevos = 0, act = 0, errores = [];
+    for (let i = 0; i < filas.length; i += 500) {
+      const r = await rpc('admin_importar_clientes', { p_filas: filas.slice(i, i + 500) });
+      nuevos += r.nuevos; act += r.actualizados; errores = errores.concat(r.errores || []);
+    }
+    toast(`Importados: ${num(nuevos)} nuevos, ${num(act)} actualizados${errores.length ? `, ${errores.length} filas con error` : ''}.`);
+    if (errores.length) setTimeout(() => alertaErrores(errores), 400);
+    despues && despues();
+  }, 'Importar');
+  const inp = document.querySelector('dialog #i-f'), prev = document.querySelector('dialog #i-prev');
+  inp.onchange = async () => {
+    const file = inp.files[0]; if (!file) return;
+    prev.textContent = 'Leyendo archivo…';
+    try {
+      const XLSX = await cargarXLSX();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true });
+      if (!raw.length) { prev.textContent = 'El archivo está vacío.'; return; }
+      const keys = Object.keys(raw[0]);
+      const kNom = keys.find((k) => /nombre|cliente/.test(normH(k)));
+      const kCed = keys.find((k) => /cedula|documento|identificacion|^cc$|^id$/.test(normH(k)));
+      const kNac = keys.find((k) => /nacimiento|cumple|fechanac/.test(normH(k)));
+      if (!kNom || !kCed) { prev.innerHTML = `<span style="color:var(--coral-t)">No encontré las columnas de nombre y cédula. Columnas del archivo: ${esc(keys.join(', '))}</span>`; filas = []; return; }
+      filas = raw.map((r, i) => ({ fila: i + 2, nombre: String(r[kNom] || '').trim(), cedula: String(r[kCed] || '').replace(/\D/g, ''), nacimiento: kNac ? fechaExcel(r[kNac]) : '' })).filter((r) => r.nombre || r.cedula);
+      const conNac = filas.filter((r) => r.nacimiento).length;
+      prev.innerHTML = `<div class="stack" style="gap:8px"><b>${num(filas.length)} clientes listos para importar</b><span class="muted">Columnas: ${esc(kNom)} · ${esc(kCed)}${kNac ? ' · ' + esc(kNac) : ' · (sin columna de nacimiento)'} — ${num(conNac)} con fecha de nacimiento.</span>
+        <div class="tbl-wrap" style="max-height:180px;overflow:auto"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th></tr></thead><tbody>${filas.slice(0, 8).map((r) => `<tr><td>${esc(r.nombre)}</td><td>${esc(r.cedula)}</td><td>${r.nacimiento ? fdate(r.nacimiento) : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+    } catch (er) { prev.innerHTML = `<span style="color:var(--coral-t)">${esc(er.message || 'No se pudo leer el archivo.')}</span>`; filas = []; }
+  };
+}
+function alertaErrores(errores) {
+  dialog(`<h2 style="font-size:20px;font-weight:800">Filas que no se importaron</h2><div class="tbl-wrap" style="max-height:300px;overflow:auto"><table><thead><tr><th>Fila</th><th>Motivo</th></tr></thead><tbody>${errores.slice(0, 300).map((e) => `<tr><td>${e.fila}</td><td>${esc(e.motivo)}</td></tr>`).join('')}</tbody></table></div>`, async () => {}, 'Entendido');
+}
+
+/* ---- Cumpleaños del mes ---- */
+const MESES_L = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+let cumpleState = { mes: new Date().getMonth() + 1, tienda: null };
+async function vCumple(box) {
+  const st = cumpleState, tn = st.tienda ? tiendaNombre(st.tienda) : null;
+  box.innerHTML = `
+  <div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Cumpleaños de ${MESES_L[st.mes - 1]}</h1>
+    <div class="row wrap"><label for="c-mes" class="small" style="font-weight:600">Mes</label><select class="input" id="c-mes" style="width:180px;height:44px">${MESES_L.map((m, i) => `<option value="${i + 1}" ${i + 1 === st.mes ? 'selected' : ''}>${m}</option>`).join('')}</select>
+    <button class="btn ghost sm" id="c-x">Exportar lista</button></div></div>
+  <div class="stack" style="gap:8px"><span class="small" style="font-weight:600">Clientes que compran en:</span>
+    <div class="row wrap" style="gap:8px"><button class="chip" data-ct="" aria-pressed="${!st.tienda}">TODAS</button>${tiendas.map((t) => `<button class="chip" data-ct="${t.id}" aria-pressed="${st.tienda === t.id}">${esc(t.nombre)}</button>`).join('')}</div></div>
+  <div id="c-body"><div class="empty">Cargando…</div></div>`;
+  $('#c-mes').onchange = (e) => { st.mes = Number(e.target.value); vCumple(box); };
+  $$('[data-ct]').forEach((b) => b.onclick = () => { st.tienda = b.dataset.ct ? Number(b.dataset.ct) : null; vCumple(box); });
+  let rows; try { rows = await rpc('admin_cumpleanos', { p_mes: st.mes, p_tienda_id: st.tienda }); } catch (e) { $('#c-body').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+  const hoyD = new Date(), esMes = st.mes === hoyD.getMonth() + 1;
+  const activos = rows.filter((r) => r.activo).length;
+  $('#c-x').onclick = () => csv([['Día', 'Nombre', 'Cédula', 'Celular', 'Fecha nacimiento', 'Edad que cumple', 'Tiendas preferidas', 'Puntos', 'App activa'], ...rows.map((r) => [r.dia, r.nombre, r.cedula, r.celular, r.fecha_nacimiento, r.edad, (r.tiendas || []).join(', '), r.puntos, r.activo ? 'Sí' : 'No'])], `cumpleanos-${MESES_L[st.mes - 1].toLowerCase()}${tn ? '-' + tn.toLowerCase().replace(/\s+/g, '-') : ''}.csv`);
+  $('#c-body').innerHTML = `
+  <div class="kpis" style="margin-bottom:20px">
+    <div class="kpi"><div class="dot" style="background:var(--sun)"></div><span>Cumplen en ${MESES_L[st.mes - 1].toLowerCase()}${tn ? ' · compran en ' + esc(tn) : ''}</span><b>${num(rows.length)}</b></div>
+    <div class="kpi"><div class="dot" style="background:var(--teal)"></div><span>Recibirán el mensaje (app activa)</span><b>${num(activos)}</b></div>
+    ${esMes ? `<div class="kpi"><div class="dot" style="background:var(--coral)"></div><span>Cumplen hoy</span><b>${num(rows.filter((r) => r.dia === hoyD.getDate()).length)}</b></div>` : ''}
+  </div>
+  <div class="cols">
+    <section class="card stack">
+      ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Día</th><th>Cliente</th><th>Cumple</th><th>Tiendas preferidas</th><th style="text-align:right">Puntos</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr class="${esMes && r.dia === hoyD.getDate() ? 'sel' : ''}"><td><b style="font-size:16px">${r.dia}</b></td><td><b>${esc(r.nombre)}</b><div class="small muted">C.C. ${esc(num(r.cedula))}${r.activo ? '' : ' · sin activar'}</div></td><td>${r.edad} años</td><td class="small">${(r.tiendas || []).length ? esc(r.tiendas.join(', ')) : '<span class="muted">Sin compras aún</span>'}</td><td style="text-align:right">${num(r.puntos)}</td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="empty">Nadie cumple años en este mes con ese filtro.</div>'}
+    </section>
+    <form class="navy-card" id="c-f" novalidate>
+      <h2 style="font-size:20px;font-weight:800">Enviar promoción de cumpleaños</h2>
+      <p style="margin:0;color:#CFE9F0;font-size:13px">Se envía a ${activos === 1 ? 'el único cliente' : 'los ' + num(activos) + ' clientes'} de esta lista con la app activa${tn ? `, que compran en ${esc(tn)}` : ''}.</p>
+      <div class="field"><label for="c-t">Título</label><input class="input" id="c-t" maxlength="60" value="¡Feliz cumpleaños! Tenemos un regalo para ti"></div>
+      <div class="field"><label for="c-c">Mensaje</label><textarea class="input" id="c-c" rows="4" maxlength="300">Por tu cumpleaños tienes un descuento especial${tn ? ' en ' + esc(tn) : ' en Santana del Río'}. Válido durante tu mes de cumpleaños presentando tu cédula.</textarea></div>
+      <button class="btn coral block" ${activos ? '' : 'disabled'}>Enviar a ${activos === 1 ? '1 cliente' : num(activos) + ' clientes'}</button>
+    </form>
+  </div>`;
+  $('#c-f').onsubmit = async (e) => {
+    e.preventDefault();
+    const t = $('#c-t').value.trim(), c = $('#c-c').value.trim();
+    if (!t || !c) return toast('Escribe el título y el mensaje.', true);
+    if (!confirm(`¿Enviar la promoción a ${activos} clientes?`)) return;
+    const b = $('button', $('#c-f')); b.disabled = true;
+    try { const r = await rpc('admin_mensaje_cumpleanos', { p_mes: st.mes, p_tienda_id: st.tienda, p_titulo: t, p_cuerpo: c }); toast(`Promoción enviada a ${num(r.destinatarios)} clientes.`); }
+    catch (er) { toast(errText(er), true); }
+    b.disabled = false;
+  };
 }
 
 async function vPremios(box) {
@@ -786,7 +935,7 @@ async function vMensajes(box) {
     catch (er) { toast(errText(er), true); b.disabled = false; }
   };
   const { data, error } = await sb.from('mensajes').select('id,titulo,cuerpo,segmento,segmento_tienda,enviado_en,mensajes_destinatarios(count)').order('enviado_en', { ascending: false }).limit(50);
-  const segName = Object.fromEntries(SEG);
+  const segName = { ...Object.fromEntries(SEG), cumpleanos: 'Cumpleaños del mes' };
   $('#hist').innerHTML = '<h2 style="font-size:20px;font-weight:800">Enviados</h2>' + (error ? `<div class="empty">${errText(error)}</div>` : (data.map((m) => `<div style="border-top:1px solid var(--line);padding-top:10px" class="stack" ><div class="row between" style="gap:8px;align-items:flex-start"><b>${esc(m.titulo)}</b><span class="small muted" style="flex:0 0 auto">${fdate(m.enviado_en)}</span></div><span class="small muted">${esc(m.cuerpo)}</span><span class="small">${esc(segName[m.segmento] || m.segmento)}${m.segmento_tienda ? ': ' + esc(m.segmento_tienda) : ''} · ${num(m.mensajes_destinatarios?.[0]?.count || 0)} clientes</span></div>`).join('') || '<div class="empty">Aún no has enviado mensajes.</div>'));
 }
 
