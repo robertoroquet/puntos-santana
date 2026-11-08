@@ -505,15 +505,30 @@ function vAcumular(box) {
     $('#f-num').oninput = (e) => { fnum = e.target.value; upd(); };
     $('#f-nom').oninput = (e) => { fnom = e.target.value; upd(); };
     $('#f-fecha').oninput = (e) => { ffecha = e.target.value; if (ffecha) $('#vence').textContent = `${ppm} pts por cada $1.000 · vencen el ${vence()}`; upd(); };
-    $('#reg').onclick = async () => {
-      const b = $('#reg'); b.disabled = true;
-      if (!confirm(`¿Registrar la factura ${fnum.toUpperCase()} del ${fdate(ffecha)} por ${money(valor)} en ${tiendaNombre(tienda)} para ${ficha.nombre}?`)) { b.disabled = false; return; }
-      try {
+    $('#reg').onclick = () => {
+      const pts = Math.floor(valor / 1000) * ppm;
+      const fila = (k, v, big) => `<div class="vrow"><span>${k}</span><b${big ? ' class="vbig"' : ''}>${v}</b></div>`;
+      dialog(`<div class="vhead">${ic('check', 26, 2.6)}<div><h2 style="font-size:22px;font-weight:900">¿Estos son los datos correctos?</h2><span class="small muted">Revísalos con la factura en la mano antes de guardar.</span></div></div>
+        <div class="vbox">
+          ${fila('Cliente', `${esc(ficha.nombre)}<div class="small muted" style="font-weight:600">C.C. ${esc(num(ficha.cedula))}</div>`)}
+          ${fila('Tienda que vendió', esc(tiendaNombre(tienda)))}
+          ${fila('Número de factura', esc(fnum.trim().toUpperCase()))}
+          ${fila('Fecha de la factura', fdate(ffecha))}
+          ${fila('Nombre en la factura', esc(fnom.trim()))}
+          ${fila('Valor de la factura', money(valor), true)}
+          ${fila('Puntos que gana', '+' + num(pts), true)}
+        </div>`, async () => {
         const r = await rpc('acumular', { p_cedula: ficha.cedula, p_tienda_id: tienda, p_valor: valor, p_factura_numero: fnum, p_factura_fecha: ffecha, p_factura_nombre: fnom });
-        ficha = r.cliente; valor = 0; fnum = ''; fnom = ''; tienda = null; ffecha = iso(new Date());
-        toast(`+${num(r.puntos_ganados)} puntos para ${ficha.nombre}`);
-        draw();
-      } catch (er) { toast(errText(er), true); b.disabled = false; }
+        const nombre = r.cliente.nombre, total = r.cliente.puntos, fac = fnum.trim().toUpperCase();
+        // Formulario en blanco: cliente, cédula y factura
+        ficha = null; valor = 0; fnum = ''; fnom = ''; tienda = null; ffecha = iso(new Date());
+        $('#sced').value = ''; $('#sres').innerHTML = '';
+        $('#acc').innerHTML = `<div class="card okcard">${ic('check', 30, 2.6)}<div><b style="font-size:18px">Compra registrada</b><div class="small">Factura ${esc(fac)} · +${num(r.puntos_ganados)} puntos para ${esc(nombre)} · Total: ${num(total)} pts</div><div class="small muted">El formulario quedó en blanco para la siguiente compra.</div></div></div>`;
+        $('#sced').focus();
+        toast(`+${num(r.puntos_ganados)} puntos para ${nombre}`);
+      }, 'Sí, son correctos');
+      const dl = document.querySelector('dialog:last-of-type');
+      if (dl) dl.querySelector('[data-x]').textContent = 'Corregir';
     };
   }
   if (ficha) draw();
