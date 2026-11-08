@@ -58,7 +58,8 @@ const ERR = {
   SIN_ACTIVAR: 'Tu cuenta aún no está activa. Acércate a Pilatos o Derek con tu cédula para activarla y crear tu PIN.',
   YA_ACTIVO: 'Este cliente ya tiene su cuenta activa.',
   CELULAR_INVALIDO: 'Escribe un celular válido.',
-  NACIMIENTO_INVALIDO: 'Revisa la fecha de nacimiento.'
+  NACIMIENTO_INVALIDO: 'Revisa la fecha de nacimiento.',
+  TIENDA_FAVORITA_REQUERIDA: 'Elige la tienda favorita del cliente.'
 };
 function errText(e) {
   const m = (e && (e.message || e.error || e)) + '';
@@ -216,9 +217,19 @@ async function clientInicio() {
       ${pv && pv.puntos ? `<div class="warn">${ic('clock', 20).replace('currentColor', '#FFD23F')}<span>${num(pv.puntos)} pts vencen el <b>${fdate(pv.fecha)}</b></span></div>` : ''}
     </section>
     ${stampCard(d, 'cliente')}
+    <div class="card row between wrap" style="gap:10px"><div><span class="small muted">Tu tienda favorita</span><div style="font-weight:800;font-size:16px">${esc(d.tienda_favorita || 'Sin elegir')}</div><span class="small muted">Recibes primero sus promociones.</span></div><button class="btn ghost sm" id="fav">Cambiar</button></div>
     ${pend ? `<section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Premios por reclamar</h2>${pend}</section>` : ''}
     <section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Últimos movimientos</h2>${mov}</section>
   </div>${tabbar('inicio')}</div>`;
+  $('#fav').onclick = async () => {
+    let lista; try { lista = await clientCall('cliente_tiendas'); } catch (e) { return; }
+    dialog(`<h2 style="font-size:20px;font-weight:800">Elige tu tienda favorita</h2><p class="small muted" style="margin:0">Te enviaremos primero las promociones de esta tienda.</p>
+      <div class="stores">${lista.map((t) => `<button type="button" data-tf="${t.id}" aria-pressed="${t.id === d.tienda_favorita_id}">${esc(t.nombre)}</button>`).join('')}</div>`, async (dl) => {
+      const sel = dl.querySelector('[data-tf][aria-pressed="true"]'); if (!sel) { toast('Elige una tienda.', true); return false; }
+      await clientCall('cliente_tienda_favorita', { p_tienda: Number(sel.dataset.tf) }); toast('Tienda favorita actualizada.'); clientInicio();
+    });
+    document.querySelectorAll('dialog [data-tf]').forEach((b) => b.onclick = () => { document.querySelectorAll('dialog [data-tf]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
+  };
   $('#salir').onclick = async () => { try { await rpc('cliente_salir', { p_token: tok() }); } catch {} setTok(null); cInicio = null; route(); };
   $$('[data-cancel]').forEach((b) => b.onclick = async () => { if (!confirm('¿Cancelar esta solicitud?')) return; try { await clientCall('cliente_cancelar', { p_solicitud: b.dataset.cancel }); toast('Solicitud cancelada.'); clientInicio(); } catch (e) { toast(errText(e), true); } });
 }
@@ -377,6 +388,7 @@ function clientBar(f) {
       <div class="field"><label for="a-cel">Celular *</label><input class="input" id="a-cel" inputmode="tel"></div>
       <div class="field"><label for="a-mail">Correo (opcional)</label><input class="input" id="a-mail" type="email"></div>
       ${f.fecha_nacimiento ? '' : '<div class="field"><label for="a-nac">Fecha de nacimiento</label><input class="input" id="a-nac" type="date"></div>'}
+      <div class="field"><label for="a-fav">Tienda favorita (recibe sus promociones) *</label><select class="input" id="a-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
       <div class="field"><label for="a-pin">PIN (4 números) *</label><input class="input pin" id="a-pin" type="password" inputmode="numeric" maxlength="4"></div>
       <div class="field"><label for="a-pin2">Repetir PIN *</label><input class="input pin" id="a-pin2" type="password" inputmode="numeric" maxlength="4"></div>
     </div>
@@ -398,10 +410,11 @@ document.addEventListener('submit', async (e) => {
   if (digits(v('a-cel')).length < 7) return toast('Escribe el celular del cliente.', true);
   if (!/^\d{4}$/.test(v('a-pin'))) return toast(ERR.PIN_INVALIDO, true);
   if (v('a-pin') !== v('a-pin2')) return toast('Los dos PIN no coinciden.', true);
+  if (!v('a-fav')) return toast(ERR.TIENDA_FAVORITA_REQUERIDA, true);
   if (!f.querySelector('#a-ok').checked) return toast(ERR.SIN_AUTORIZACION_DATOS, true);
   const b = f.querySelector('button'); b.disabled = true;
   try {
-    ficha = await rpc('activar_cliente', { p_cedula: ficha.cedula, p_celular: v('a-cel'), p_correo: v('a-mail'), p_pin: v('a-pin'), p_acepta: true, p_nacimiento: v('a-nac') || null });
+    ficha = await rpc('activar_cliente', { p_cedula: ficha.cedula, p_celular: v('a-cel'), p_correo: v('a-mail'), p_pin: v('a-pin'), p_acepta: true, p_nacimiento: v('a-nac') || null, p_tienda_favorita: Number(v('a-fav')) });
     toast('Cuenta activada. Ya puede entrar a la app con su cédula y PIN.');
     route();
   } catch (er) { toast(errText(er), true); b.disabled = false; }
@@ -438,6 +451,7 @@ function vNuevo(box) {
       <div class="field"><label for="n-pin">PIN de 4 números (lo elige el cliente) *</label><input class="input pin" id="n-pin" type="password" inputmode="numeric" maxlength="4" required></div>
       <div class="field"><label for="n-pin2">Repetir PIN *</label><input class="input pin" id="n-pin2" type="password" inputmode="numeric" maxlength="4" required></div>
       <div class="field"><label for="n-nac">Fecha de nacimiento *</label><input class="input" id="n-nac" type="date" max="${iso(new Date())}"></div>
+      <div class="field"><label for="n-fav">Tienda favorita (recibe sus promociones) *</label><select class="input" id="n-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
     </div>
     <label class="check"><input type="checkbox" id="n-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012).</span></label>
     <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
@@ -451,10 +465,11 @@ function vNuevo(box) {
     if (!/^\d{4}$/.test(v('n-pin'))) { err.textContent = ERR.PIN_INVALIDO; return; }
     if (v('n-pin') !== v('n-pin2')) { err.textContent = 'Los dos PIN no coinciden.'; return; }
     if (!v('n-nac')) { err.textContent = 'Escribe la fecha de nacimiento: con ella le enviamos su promoción de cumpleaños.'; return; }
+    if (!v('n-fav')) { err.textContent = 'Elige la tienda favorita del cliente: allí recibirá sus promociones.'; return; }
     if (!$('#n-ok').checked) { err.textContent = ERR.SIN_AUTORIZACION_DATOS; return; }
     const b = $('button', $('#nf')); b.disabled = true;
     try {
-      ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true, p_nacimiento: v('n-nac') });
+      ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true, p_nacimiento: v('n-nac'), p_tienda_favorita: Number(v('n-fav')) });
       toast('Cliente inscrito. Ya puedes acumular su compra.');
       location.hash = '#/personal/acumular';
     } catch (er) { err.textContent = errText(er); b.disabled = false; }
@@ -668,8 +683,8 @@ async function vClientes(box) {
   <div class="cols"><section class="card stack" id="lista"><div class="empty">Cargando…</div></section><section id="det"></section></div>`;
   const load = async (q) => {
     let rows; try { rows = await rpc('admin_clientes', { p_busqueda: q || '', p_limite: 200 }); } catch (e) { $('#lista').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
-    $('#lista').innerHTML = `<h2 style="font-size:17px;font-weight:800">Clientes (${rows.length}${rows.length === 200 ? '+' : ''})</h2>` + (rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th><th style="text-align:right">Puntos</th><th style="text-align:right">Sellos</th></tr></thead><tbody>
-      ${rows.map((c) => `<tr class="clic ${selCliente === c.id ? 'sel' : ''}" data-c="${c.id}" tabindex="0"><td><b>${esc(c.nombre)}</b>${c.activo ? '' : ' <span class="pill" style="background:#FFE7A8;padding:2px 8px;font-size:10px">Sin activar</span>'}</td><td>${esc(num(c.cedula))}</td><td>${c.fecha_nacimiento ? fdate(c.fecha_nacimiento) : '—'}</td><td style="text-align:right;font-weight:700">${num(c.puntos)}</td><td style="text-align:right">${c.sellos}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin resultados.</div>');
+    $('#lista').innerHTML = `<h2 style="font-size:17px;font-weight:800">Clientes (${rows.length}${rows.length === 200 ? '+' : ''})</h2>` + (rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th><th>Favorita</th><th style="text-align:right">Puntos</th><th style="text-align:right">Sellos</th></tr></thead><tbody>
+      ${rows.map((c) => `<tr class="clic ${selCliente === c.id ? 'sel' : ''}" data-c="${c.id}" tabindex="0"><td><b>${esc(c.nombre)}</b>${c.activo ? '' : ' <span class="pill" style="background:#FFE7A8;padding:2px 8px;font-size:10px">Sin activar</span>'}</td><td>${esc(num(c.cedula))}</td><td>${c.fecha_nacimiento ? fdate(c.fecha_nacimiento) : '—'}</td><td class="small">${esc(c.tienda_favorita || '—')}</td><td style="text-align:right;font-weight:700">${num(c.puntos)}</td><td style="text-align:right">${c.sellos}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin resultados.</div>');
     $$('[data-c]').forEach((tr) => { const go = () => { selCliente = tr.dataset.c; $$('[data-c]').forEach((x) => x.classList.toggle('sel', x === tr)); detalle(rows.find((x) => x.id === selCliente)); }; tr.onclick = go; tr.onkeydown = (e) => { if (e.key === 'Enter') go(); }; });
     if (selCliente) { const c = rows.find((x) => x.id === selCliente); if (c) detalle(c); }
   };
@@ -677,7 +692,7 @@ async function vClientes(box) {
   $('#imp').onclick = () => importarClientes(() => load(''));
   $('#x-cli').onclick = async () => {
     try { const rows = await rpc('admin_clientes', { p_busqueda: '', p_limite: 100000 });
-      csv([['Cédula', 'Nombre', 'Fecha nacimiento', 'Celular', 'Correo', 'Activo', 'Puntos', 'Sellos', 'Inscrito en', 'Fecha inscripción'], ...rows.map((c) => [c.cedula, c.nombre, c.fecha_nacimiento, c.celular, c.correo, c.activo ? 'Sí' : 'No', c.puntos, c.sellos, c.tienda_registro, (c.creado_en || '').slice(0, 10)])], 'clientes-puntos-santana.csv');
+      csv([['Cédula', 'Nombre', 'Fecha nacimiento', 'Celular', 'Correo', 'Activo', 'Tienda favorita', 'Puntos', 'Sellos', 'Inscrito en', 'Fecha inscripción'], ...rows.map((c) => [c.cedula, c.nombre, c.fecha_nacimiento, c.celular, c.correo, c.activo ? 'Sí' : 'No', c.tienda_favorita, c.puntos, c.sellos, c.tienda_registro, (c.creado_en || '').slice(0, 10)])], 'clientes-puntos-santana.csv');
     } catch (e) { toast(errText(e), true); }
   };
   $('#x-tx').onclick = async () => {
@@ -822,7 +837,7 @@ async function vCumple(box) {
   <div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Cumpleaños de ${MESES_L[st.mes - 1]}</h1>
     <div class="row wrap"><label for="c-mes" class="small" style="font-weight:600">Mes</label><select class="input" id="c-mes" style="width:180px;height:44px">${MESES_L.map((m, i) => `<option value="${i + 1}" ${i + 1 === st.mes ? 'selected' : ''}>${m}</option>`).join('')}</select>
     <button class="btn ghost sm" id="c-x">Exportar lista</button></div></div>
-  <div class="stack" style="gap:8px"><span class="small" style="font-weight:600">Clientes que compran en:</span>
+  <div class="stack" style="gap:8px"><span class="small" style="font-weight:600">Clientes de la tienda (favorita o compran allí):</span>
     <div class="row wrap" style="gap:8px"><button class="chip" data-ct="" aria-pressed="${!st.tienda}">TODAS</button>${tiendas.map((t) => `<button class="chip" data-ct="${t.id}" aria-pressed="${st.tienda === t.id}">${esc(t.nombre)}</button>`).join('')}</div></div>
   <div id="c-body"><div class="empty">Cargando…</div></div>`;
   $('#c-mes').onchange = (e) => { st.mes = Number(e.target.value); vCumple(box); };
@@ -830,7 +845,7 @@ async function vCumple(box) {
   let rows; try { rows = await rpc('admin_cumpleanos', { p_mes: st.mes, p_tienda_id: st.tienda }); } catch (e) { $('#c-body').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
   const hoyD = new Date(), esMes = st.mes === hoyD.getMonth() + 1;
   const activos = rows.filter((r) => r.activo).length;
-  $('#c-x').onclick = () => csv([['Día', 'Nombre', 'Cédula', 'Celular', 'Fecha nacimiento', 'Edad que cumple', 'Tiendas preferidas', 'Puntos', 'App activa'], ...rows.map((r) => [r.dia, r.nombre, r.cedula, r.celular, r.fecha_nacimiento, r.edad, (r.tiendas || []).join(', '), r.puntos, r.activo ? 'Sí' : 'No'])], `cumpleanos-${MESES_L[st.mes - 1].toLowerCase()}${tn ? '-' + tn.toLowerCase().replace(/\s+/g, '-') : ''}.csv`);
+  $('#c-x').onclick = () => csv([['Día', 'Nombre', 'Cédula', 'Celular', 'Fecha nacimiento', 'Edad que cumple', 'Tienda favorita', 'Tiendas donde compra', 'Puntos', 'App activa'], ...rows.map((r) => [r.dia, r.nombre, r.cedula, r.celular, r.fecha_nacimiento, r.edad, r.favorita, (r.tiendas || []).join(', '), r.puntos, r.activo ? 'Sí' : 'No'])], `cumpleanos-${MESES_L[st.mes - 1].toLowerCase()}${tn ? '-' + tn.toLowerCase().replace(/\s+/g, '-') : ''}.csv`);
   $('#c-body').innerHTML = `
   <div class="kpis" style="margin-bottom:20px">
     <div class="kpi"><div class="dot" style="background:var(--sun)"></div><span>Cumplen en ${MESES_L[st.mes - 1].toLowerCase()}${tn ? ' · compran en ' + esc(tn) : ''}</span><b>${num(rows.length)}</b></div>
@@ -839,8 +854,8 @@ async function vCumple(box) {
   </div>
   <div class="cols">
     <section class="card stack">
-      ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Día</th><th>Cliente</th><th>Cumple</th><th>Tiendas preferidas</th><th style="text-align:right">Puntos</th></tr></thead><tbody>
-      ${rows.map((r) => `<tr class="${esMes && r.dia === hoyD.getDate() ? 'sel' : ''}"><td><b style="font-size:16px">${r.dia}</b></td><td><b>${esc(r.nombre)}</b><div class="small muted">C.C. ${esc(num(r.cedula))}${r.activo ? '' : ' · sin activar'}</div></td><td>${r.edad} años</td><td class="small">${(r.tiendas || []).length ? esc(r.tiendas.join(', ')) : '<span class="muted">Sin compras aún</span>'}</td><td style="text-align:right">${num(r.puntos)}</td></tr>`).join('')}
+      ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Día</th><th>Cliente</th><th>Cumple</th><th>Favorita · compras</th><th style="text-align:right">Puntos</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr class="${esMes && r.dia === hoyD.getDate() ? 'sel' : ''}"><td><b style="font-size:16px">${r.dia}</b></td><td><b>${esc(r.nombre)}</b><div class="small muted">C.C. ${esc(num(r.cedula))}${r.activo ? '' : ' · sin activar'}</div></td><td>${r.edad} años</td><td class="small">${r.favorita ? `<b>★ ${esc(r.favorita)}</b><br>` : ''}${(r.tiendas || []).length ? esc(r.tiendas.join(', ')) : '<span class="muted">Sin compras aún</span>'}</td><td style="text-align:right">${num(r.puntos)}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="empty">Nadie cumple años en este mes con ese filtro.</div>'}
     </section>
     <form class="navy-card" id="c-f" novalidate>
