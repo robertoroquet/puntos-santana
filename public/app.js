@@ -774,7 +774,7 @@ async function vInforme(box) {
   const opciones = Array.from({ length: 13 }, (_, i) => { const d = new Date(); const x = new Date(d.getFullYear(), d.getMonth() - i, 1); return [iso(x), `${MESES_L[x.getMonth()]} ${x.getFullYear()}`]; });
   box.innerHTML = `<div class="row between wrap no-print"><h1 style="font-size:30px;font-weight:800">Informe mensual por tienda</h1>
     <div class="row wrap"><label for="i-mes" class="small" style="font-weight:600">Mes</label><select class="input" id="i-mes" style="width:210px;height:44px">${opciones.map(([v, l]) => `<option value="${v}" ${v === informeMes ? 'selected' : ''}>${l}</option>`).join('')}</select>
-    <button class="btn ghost sm" id="i-x">Exportar Excel</button><button class="btn ghost sm" id="i-p">Imprimir / PDF</button><button class="btn coral sm" id="i-meta">Cargar presupuesto</button></div></div>
+    <button class="btn ghost sm" id="i-x">Exportar Excel</button><button class="btn ghost sm" id="i-p">Imprimir / PDF</button><button class="btn ghost sm" id="i-man">Cargar resultados a mano</button><button class="btn coral sm" id="i-meta">Cargar presupuesto</button></div></div>
     <h1 class="only-print" style="font-size:26px;font-weight:800">Puntos Santana · Informe de ${titulo}</h1>
     <div id="i-body"><div class="empty">Cargando…</div></div>`;
   $('#i-mes').onchange = (e) => { informeMes = e.target.value; vInforme(box); };
@@ -796,6 +796,7 @@ async function vInforme(box) {
   const K = (l, v, c, sub) => `<div class="kpi"><div class="dot" style="background:${c}"></div><span>${l}</span><b>${v}</b>${sub ? `<span class="small">${sub}</span>` : ''}</div>`;
   const delta = (t) => { const x = t.facturas - t.facturas_anterior; return x === 0 ? '<span class="muted">=</span>' : `<span style="color:${x > 0 ? '#1B6B3A' : '#C2402F'};font-weight:700">${x > 0 ? '▲' : '▼'} ${Math.abs(x)}</span>`; };
   $('#i-body').innerHTML = `<div class="stack" style="gap:20px">
+    ${d.manual ? `<div class="card small" style="border-color:var(--teal);background:#EAF7FA">Este mes incluye resultados cargados a mano (marcados con <b>✎</b> en el ranking). Se suman a lo registrado en la app y no cambian los puntos de ningún cliente.</div>` : ''}
     ${esActual ? `<div class="card small" style="border-color:var(--yellow);background:#FFFBEA">Mes en curso: van ${hoy.getDate()} de ${diasMes} días (${avanceMes}% del mes). Una tienda va al día si su cumplimiento está cerca del ${avanceMes}%.</div>` : ''}
     <div class="kpis">
       ${K('Facturas registradas', num(totF), 'var(--navy)')}
@@ -818,12 +819,28 @@ async function vInforme(box) {
     </div>
     <section class="card stack"><h2 style="font-size:18px;font-weight:800">Ranking de tiendas · ${titulo}</h2>
       <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th style="text-align:right">Facturas</th><th style="text-align:right">Meta</th><th>Cumplimiento</th><th style="text-align:right">Puntos</th><th style="text-align:right">Ventas</th><th style="text-align:right">Clientes</th><th style="text-align:right">vs. mes anterior</th></tr></thead><tbody>
-      ${rank.map((t, i) => `<tr><td><b>${i + 1}</b></td><td><b>${esc(t.nombre)}</b>${t.sellos ? `<div class="small muted">${num(t.sellos)} sellos</div>` : ''}</td><td style="text-align:right;font-weight:800">${num(t.facturas)}</td><td style="text-align:right">${t.meta ? num(t.meta) : '—'}</td>
+      ${rank.map((t, i) => `<tr><td><b>${i + 1}</b></td><td><b>${esc(t.nombre)}</b>${t.man_facturas != null || t.man_puntos != null || t.man_ventas != null ? ' <span title="Incluye resultados cargados a mano" style="color:var(--teal-d)">✎</span>' : ''}${t.sellos ? `<div class="small muted">${num(t.sellos)} sellos</div>` : ''}</td><td style="text-align:right;font-weight:800">${num(t.facturas)}</td><td style="text-align:right">${t.meta ? num(t.meta) : '—'}</td>
         <td style="min-width:170px"><div class="row" style="gap:8px"><div class="bar" style="flex:1;height:10px"><div style="width:${Math.min(100, t.pct || 0)}%;background:${color(t.pct)}"></div></div><b style="color:${color(t.pct)};min-width:44px;text-align:right">${t.pct == null ? '—' : t.pct + '%'}</b></div><span class="small" style="color:${color(t.pct)}">${estado(t.pct)}</span></td>
         <td style="text-align:right">${num(t.puntos)}</td><td style="text-align:right">${money(t.ventas)}</td><td style="text-align:right">${num(t.clientes)}</td><td style="text-align:right">${delta(t)}</td></tr>`).join('')}
       </tbody></table></div>
     </section></div>`;
   $('#i-x').onclick = () => csv([['Mes', 'Puesto', 'Tienda', 'Facturas', 'Meta facturas', 'Cumplimiento %', 'Puntos', 'Ventas', 'Clientes', 'Facturas mes anterior'], ...rank.map((t, i) => [titulo, i + 1, t.nombre, t.facturas, t.meta ?? '', t.pct ?? '', t.puntos, t.ventas, t.clientes, t.facturas_anterior])], `informe-tiendas-${informeMes.slice(0, 7)}.csv`);
+  $('#i-man').onclick = () => {
+    const nf = (v) => v == null ? '' : num(v);
+    dialog(`<h2 style="font-size:20px;font-weight:800">Resultados a mano · ${titulo}</h2>
+      <p class="small muted" style="margin:0">Para meses anteriores a la app (por ejemplo octubre) o datos que no pasaron por la app. Se suman al informe; no cambian los puntos de los clientes. Deja vacío lo que no tengas.</p>
+      <div class="tbl-wrap" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Tienda</th><th>Facturas</th><th>Puntos</th><th>Ventas ($)</th></tr></thead><tbody>
+      ${T.map((t) => `<tr data-man="${t.id}"><td><b>${esc(t.nombre)}</b></td>
+        <td><input class="input" aria-label="Facturas ${esc(t.nombre)}" data-k="facturas" inputmode="numeric" value="${nf(t.man_facturas)}" style="height:40px;min-width:90px"></td>
+        <td><input class="input" aria-label="Puntos ${esc(t.nombre)}" data-k="puntos" inputmode="numeric" value="${nf(t.man_puntos)}" style="height:40px;min-width:110px"></td>
+        <td><input class="input" aria-label="Ventas ${esc(t.nombre)}" data-k="ventas" inputmode="numeric" value="${nf(t.man_ventas)}" style="height:40px;min-width:130px"></td></tr>`).join('')}
+      </tbody></table></div>`, async (dl) => {
+      const filas = {};
+      dl.querySelectorAll('[data-man]').forEach((tr) => { const o = {}; tr.querySelectorAll('[data-k]').forEach((i) => { o[i.dataset.k] = i.value.replace(/\D/g, ''); }); filas[tr.dataset.man] = o; });
+      await rpc('admin_guardar_resultados', { p_mes: informeMes, p_filas: filas }); toast('Resultados guardados.'); vInforme(box);
+    });
+    document.querySelectorAll('dialog [data-k]').forEach((i) => i.oninput = () => { const v = i.value.replace(/\D/g, ''); i.value = v ? Number(v).toLocaleString('es-CO') : ''; });
+  };
   $('#i-meta').onclick = () => {
     dialog(`<h2 style="font-size:20px;font-weight:800">Presupuesto de facturas · ${titulo}</h2>
       <p class="small muted" style="margin:0">Cuántas facturas debe registrar cada tienda en el mes. Deja vacío si una tienda no tiene meta.</p>
