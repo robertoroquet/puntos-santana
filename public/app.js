@@ -368,6 +368,7 @@ async function staffRoute(view) {
   document.title = 'Puntos Santana · Personal';
   const p = await loadStaff();
   if (!p) return staffLogin();
+  if (p.rol === 'admin' && !(await adminVerificado())) return adminSegundoPaso();
   const isAdmin = p.rol === 'admin';
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
   const adminOnly = ['dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
@@ -376,6 +377,54 @@ async function staffRoute(view) {
   const box = $('#content');
   const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes };
   (views[view] || vAcumular)(box);
+}
+
+/* ---- Doble verificación del administrador (código de app autenticadora) ---- */
+async function adminVerificado() {
+  try { const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel(); return data && data.currentLevel === 'aal2'; } catch { return false; }
+}
+async function adminSegundoPaso() {
+  document.title = 'Puntos Santana · Verificación';
+  let factores = [];
+  try { const { data } = await sb.auth.mfa.listFactors(); factores = (data && data.all) || []; } catch {}
+  const listo = factores.find((f) => f.factor_type === 'totp' && f.status === 'verified');
+  const marco = (inner) => `<div class="login-staff"><form class="card" id="mf2" novalidate style="max-width:460px">
+    <div class="brand" style="color:var(--navy)"><img src="${LOGO}" alt=""><div><b>PUNTOS <span style="color:var(--coral)">SANTANA</span></b><small class="muted">Administrador · doble verificación</small></div></div>
+    ${inner}
+    <div class="field"><label for="mf-code">Código de 6 dígitos</label><input class="input pin" id="mf-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
+    <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
+    <button class="btn coral block">Verificar</button>
+    <button type="button" class="btn ghost block" id="mf-out">Cerrar sesión</button></form></div>`;
+  let factorId;
+  if (listo) {
+    factorId = listo.id;
+    app.innerHTML = marco('<p class="muted" style="margin:0">Abre <b>Google Authenticator</b> (o tu app de códigos) en tu celular y escribe el código de <b>Puntos Santana</b>.</p>');
+  } else {
+    for (const f of factores.filter((x) => x.status !== 'verified')) { try { await sb.auth.mfa.unenroll({ factorId: f.id }); } catch {} }
+    const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Puntos Santana ' + Date.now() });
+    if (error) { app.innerHTML = `<div class="login-staff"><div class="card stack"><b>No se pudo iniciar la doble verificación.</b><span class="small muted">${esc(error.message)}</span><button class="btn ghost" id="mf-out">Cerrar sesión</button></div></div>`; $('#mf-out').onclick = async () => { await sb.auth.signOut(); perfil = null; route(); }; return; }
+    factorId = data.id;
+    app.innerHTML = marco(`<div class="stack" style="gap:10px">
+      <b style="font-size:17px">Activa la doble verificación (una sola vez)</b>
+      <ol class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">
+        <li>Instala <b>Google Authenticator</b> en tu celular (gratis en Play Store o App Store).</li>
+        <li>Toca <b>+</b> → <b>Escanear un código QR</b> y escanea este código.</li>
+        <li>Escribe abajo el código de 6 dígitos que aparece.</li>
+      </ol>
+      <div style="align-self:center;background:#fff;padding:10px;border-radius:14px;border:2px solid var(--line)"><img src="${data.totp.qr_code}" alt="Código QR para la app autenticadora" style="width:190px;height:190px;display:block"></div>
+      <details class="small"><summary style="cursor:pointer">¿No puedes escanear? Escribe esta clave</summary><code style="word-break:break-all;font-size:13px">${esc(data.totp.secret)}</code></details></div>`);
+  }
+  $('#mf-code').focus();
+  $('#mf-out').onclick = async () => { await sb.auth.signOut(); perfil = null; location.hash = '#/personal'; route(); };
+  $('#mf2').onsubmit = async (e) => {
+    e.preventDefault();
+    const code = digits($('#mf-code').value), b = $('button', $('#mf2'));
+    if (code.length !== 6) { $('#err').textContent = 'Escribe los 6 dígitos.'; return; }
+    b.disabled = true; $('#err').textContent = '';
+    const { error } = await sb.auth.mfa.challengeAndVerify({ factorId, code });
+    if (error) { $('#err').textContent = 'Código incorrecto o vencido. Escribe el código que aparece ahora.'; b.disabled = false; $('#mf-code').value = ''; $('#mf-code').focus(); return; }
+    toast('Verificación correcta.'); route();
+  };
 }
 
 function staffLogin() {
