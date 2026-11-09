@@ -145,6 +145,7 @@ function clientLogin() {
       <div class="field"><label for="pin">PIN</label><input class="input pin" id="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" required></div>
       <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
       <button class="btn coral block" style="height:56px;font-size:17px">Entrar</button>
+      ${botonInstalar()}
       <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos o Derek con tu cédula.</p>
     </form>
   </div>`;
@@ -184,7 +185,7 @@ function stampCard(d, quien) {
     <header><img src="${LOGO}" alt=""><div><b>Tarjeta de sellos</b><span>Restaurante · Santana del Río</span></div><em>${n}/${meta}</em></header>
     <div class="slots">${slots}</div>
     ${pie}
-    <div class="sc-rules">Presenta tu factura en caja para recibir tu sello · Máximo 1 sello por día${d.regalos_recibidos ? ` · Regalos recibidos: ${d.regalos_recibidos}` : ''}</div>
+    <div class="sc-rules">1 sello por cada comida fuerte en el Restaurante · Presenta tu factura en caja · Máximo 1 sello por día${d.regalos_recibidos ? ` · Regalos recibidos: ${d.regalos_recibidos}` : ''}</div>
   </section>`;
 }
 
@@ -217,18 +218,21 @@ async function clientInicio() {
       ${pv && pv.puntos ? `<div class="warn">${ic('clock', 20).replace('currentColor', '#FFD23F')}<span>${num(pv.puntos)} pts vencen el <b>${fdate(pv.fecha)}</b></span></div>` : ''}
     </section>
     ${stampCard(d, 'cliente')}
-    <div class="card row between wrap" style="gap:10px"><div><span class="small muted">Tu tienda favorita</span><div style="font-weight:800;font-size:16px">${esc(d.tienda_favorita || 'Sin elegir')}</div><span class="small muted">Recibes primero sus promociones.</span></div><button class="btn ghost sm" id="fav">Cambiar</button></div>
+    <div class="card row between wrap" style="gap:10px"><div><span class="small muted">Tu tienda favorita</span><div style="font-weight:800;font-size:16px">${esc(d.tienda_favorita || 'Sin elegir')}</div><span class="small muted">Elige también de qué tiendas quieres recibir promociones.</span></div><button class="btn ghost sm" id="fav">Mis tiendas</button></div>
+    ${botonInstalar()}
     ${pend ? `<section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Premios por reclamar</h2>${pend}</section>` : ''}
     <section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Últimos movimientos</h2>${mov}</section>
   </div>${tabbar('inicio')}</div>`;
   $('#fav').onclick = async () => {
-    let lista; try { lista = await clientCall('cliente_tiendas'); } catch (e) { return; }
-    dialog(`<h2 style="font-size:20px;font-weight:800">Elige tu tienda favorita</h2><p class="small muted" style="margin:0">Te enviaremos primero las promociones de esta tienda.</p>
-      <div class="stores">${lista.map((t) => `<button type="button" data-tf="${t.id}" aria-pressed="${t.id === d.tienda_favorita_id}">${esc(t.nombre)}</button>`).join('')}</div>`, async (dl) => {
-      const sel = dl.querySelector('[data-tf][aria-pressed="true"]'); if (!sel) { toast('Elige una tienda.', true); return false; }
-      await clientCall('cliente_tienda_favorita', { p_tienda: Number(sel.dataset.tf) }); toast('Tienda favorita actualizada.'); clientInicio();
+    let pr; try { pr = await clientCall('cliente_inicio_prefs'); } catch (e) { return; }
+    const promo = new Set(pr.promo || []);
+    dialog(`<h2 style="font-size:20px;font-weight:800">Mis tiendas</h2>
+      <div class="field"><label for="pf-fav">Tu tienda favorita</label><select class="input" id="pf-fav">${pr.tiendas.map((t) => `<option value="${t.id}" ${t.id === pr.favorita ? 'selected' : ''}>${esc(t.nombre)}</option>`).join('')}</select></div>
+      <fieldset class="promo-set"><legend>Quiero recibir promociones de:</legend><div class="chipchks">${pr.tiendas.map((t) => `<label class="chipchk"><input type="checkbox" name="pf-promo" value="${t.id}" ${promo.has(t.id) ? 'checked' : ''}><span>${esc(t.nombre)}</span></label>`).join('')}</div></fieldset>`, async (dl) => {
+      const fav = Number(dl.querySelector('#pf-fav').value);
+      const lista = Array.from(dl.querySelectorAll('input[name="pf-promo"]:checked')).map((i) => Number(i.value));
+      await clientCall('cliente_preferencias', { p_favorita: fav, p_promo: lista }); toast('Tus tiendas quedaron guardadas.'); clientInicio();
     });
-    document.querySelectorAll('dialog [data-tf]').forEach((b) => b.onclick = () => { document.querySelectorAll('dialog [data-tf]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
   };
   $('#salir').onclick = async () => { try { await rpc('cliente_salir', { p_token: tok() }); } catch {} setTok(null); cInicio = null; route(); };
   $$('[data-cancel]').forEach((b) => b.onclick = async () => { if (!confirm('¿Cancelar esta solicitud?')) return; try { await clientCall('cliente_cancelar', { p_solicitud: b.dataset.cancel }); toast('Solicitud cancelada.'); clientInicio(); } catch (e) { toast(errText(e), true); } });
@@ -388,10 +392,11 @@ function clientBar(f) {
       <div class="field"><label for="a-cel">Celular *</label><input class="input" id="a-cel" inputmode="tel"></div>
       <div class="field"><label for="a-mail">Correo (opcional)</label><input class="input" id="a-mail" type="email"></div>
       ${f.fecha_nacimiento ? '' : '<div class="field"><label for="a-nac">Fecha de nacimiento</label><input class="input" id="a-nac" type="date"></div>'}
-      <div class="field"><label for="a-fav">Tienda favorita (recibe sus promociones) *</label><select class="input" id="a-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
+      <div class="field"><label for="a-fav">Tienda favorita *</label><select class="input" id="a-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
       <div class="field"><label for="a-pin">PIN (4 números) *</label><input class="input pin" id="a-pin" type="password" inputmode="numeric" maxlength="4"></div>
       <div class="field"><label for="a-pin2">Repetir PIN *</label><input class="input pin" id="a-pin2" type="password" inputmode="numeric" maxlength="4"></div>
     </div>
+    <fieldset class="promo-set"><legend>¿De qué tiendas quiere recibir promociones? <span class="muted">(puede elegir varias)</span></legend><div class="chipchks">${tiendas.map((t) => `<label class="chipchk"><input type="checkbox" name="a-promo" value="${t.id}"><span>${esc(t.nombre)}</span></label>`).join('')}</div></fieldset>
     <label class="check"><input type="checkbox" id="a-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012).</span></label>
     <button class="btn coral" style="align-self:flex-start">Activar cuenta</button>
   </form>`;
@@ -414,7 +419,7 @@ document.addEventListener('submit', async (e) => {
   if (!f.querySelector('#a-ok').checked) return toast(ERR.SIN_AUTORIZACION_DATOS, true);
   const b = f.querySelector('button'); b.disabled = true;
   try {
-    ficha = await rpc('activar_cliente', { p_cedula: ficha.cedula, p_celular: v('a-cel'), p_correo: v('a-mail'), p_pin: v('a-pin'), p_acepta: true, p_nacimiento: v('a-nac') || null, p_tienda_favorita: Number(v('a-fav')) });
+    ficha = await rpc('activar_cliente', { p_cedula: ficha.cedula, p_celular: v('a-cel'), p_correo: v('a-mail'), p_pin: v('a-pin'), p_acepta: true, p_nacimiento: v('a-nac') || null, p_tienda_favorita: Number(v('a-fav')), p_promo_tiendas: Array.from(f.querySelectorAll('input[name="a-promo"]:checked')).map((i) => Number(i.value)) });
     toast('Cuenta activada. Ya puede entrar a la app con su cédula y PIN.');
     route();
   } catch (er) { toast(errText(er), true); b.disabled = false; }
@@ -451,8 +456,9 @@ function vNuevo(box) {
       <div class="field"><label for="n-pin">PIN de 4 números (lo elige el cliente) *</label><input class="input pin" id="n-pin" type="password" inputmode="numeric" maxlength="4" required></div>
       <div class="field"><label for="n-pin2">Repetir PIN *</label><input class="input pin" id="n-pin2" type="password" inputmode="numeric" maxlength="4" required></div>
       <div class="field"><label for="n-nac">Fecha de nacimiento *</label><input class="input" id="n-nac" type="date" max="${iso(new Date())}"></div>
-      <div class="field"><label for="n-fav">Tienda favorita (recibe sus promociones) *</label><select class="input" id="n-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
+      <div class="field"><label for="n-fav">Tienda favorita *</label><select class="input" id="n-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
     </div>
+    <fieldset class="promo-set"><legend>¿De qué tiendas quiere recibir promociones? <span class="muted">(puede elegir varias)</span></legend><div class="chipchks">${tiendas.map((t) => `<label class="chipchk"><input type="checkbox" name="n-promo" value="${t.id}"><span>${esc(t.nombre)}</span></label>`).join('')}</div></fieldset>
     <label class="check"><input type="checkbox" id="n-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012).</span></label>
     <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
     <button class="btn coral" style="align-self:flex-start">Inscribir cliente</button>
@@ -469,7 +475,7 @@ function vNuevo(box) {
     if (!$('#n-ok').checked) { err.textContent = ERR.SIN_AUTORIZACION_DATOS; return; }
     const b = $('button', $('#nf')); b.disabled = true;
     try {
-      ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true, p_nacimiento: v('n-nac'), p_tienda_favorita: Number(v('n-fav')) });
+      ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true, p_nacimiento: v('n-nac'), p_tienda_favorita: Number(v('n-fav')), p_promo_tiendas: $$('input[name="n-promo"]:checked').map((i) => Number(i.value)) });
       toast('Cliente inscrito. Ya puedes acumular su compra.');
       location.hash = '#/personal/acumular';
     } catch (er) { err.textContent = errText(er); b.disabled = false; }
@@ -509,7 +515,7 @@ function vAcumular(box) {
           <span class="big" id="pts">+${num(Math.floor(valor / 1000) * ppm)}</span>
           <span class="small" style="color:#CFE9F0" id="vence">${ppm} pts por cada $1.000 · vencen el ${vence()}</span>
         </div>
-        ${t && t.da_sellos ? `<a href="#/personal/sellos" style="background:var(--sun);color:var(--navy);border-radius:14px;padding:12px 14px;font-size:13px;font-weight:700;text-decoration:none">Compra en el Restaurante: recuerda marcar el sello con la factura →</a>` : ''}
+        ${t && t.da_sellos ? `<a href="#/personal/sellos" style="background:var(--sun);color:var(--navy);border-radius:14px;padding:12px 14px;font-size:13px;font-weight:700;text-decoration:none">Compra en el Restaurante: si incluye comida fuerte, marca el sello con la factura →</a>` : ''}
         <button class="btn coral block" id="reg" style="height:60px;font-size:17px" ${ready() ? '' : 'disabled'}>Registrar compra</button>
       </section>
     </div>`;
@@ -553,7 +559,7 @@ function vAcumular(box) {
 function vSellos(box) {
   const s = searchBox(() => draw());
   box.innerHTML = `<h1 style="font-size:28px;font-weight:800">Marcar sello</h1>
-  <p class="muted" style="margin:0">El cliente presenta su factura del Restaurante. Buscas su cédula, escribes el número de la factura y marcas el sello. Máximo 1 sello por día.</p>${s.html}<div id="sel"></div>`;
+  <p class="muted" style="margin:0">El sello es <b>solo por comida fuerte</b> en el Restaurante (no por bebidas, postres ni antojos). El cliente presenta su factura, buscas su cédula, escribes el número de la factura y marcas el sello. Máximo 1 sello por día.</p>${s.html}<div id="sel"></div>`;
   s.bind();
   function draw() {
     const box2 = $('#sel');
@@ -574,6 +580,7 @@ function vSellos(box) {
           <h2 style="font-size:20px;font-weight:800">Nuevo sello</h2>
           ${ficha.sello_hoy ? '<div style="background:var(--sun);color:var(--navy);border-radius:14px;padding:12px 14px;font-size:14px;font-weight:700">Hoy ya recibió su sello. Puede volver mañana.</div>' : `
           <div class="field"><label for="fac">Número de la factura</label><input class="input" id="fac" autocomplete="off" style="text-transform:uppercase" placeholder="Ej.: FE-10234"></div>
+          <label class="check" style="color:#fff"><input type="checkbox" id="fuerte"><span>Confirmo que la factura incluye una <b>comida fuerte</b></span></label>
           <button class="btn coral block" style="height:60px;font-size:17px">Marcar sello</button>`}
         </form>`}
     </div>`;
@@ -583,6 +590,7 @@ function vSellos(box) {
       sf2.onsubmit = async (e) => {
         e.preventDefault();
         const f = $('#fac').value.trim(); if (!f) return toast(ERR.FACTURA_REQUERIDA, true);
+        if (!$('#fuerte').checked) return toast('El sello es solo por comida fuerte: confirma que la factura la incluye.', true);
         const b = $('button', sf2); b.disabled = true;
         try { ficha = await rpc('marcar_sello', { p_cedula: ficha.cedula, p_factura: f }); toast(`Sello marcado: ${ficha.sellos} de ${ficha.sellos_meta || 8}`); draw(); }
         catch (er) { toast(errText(er), true); b.disabled = false; }
@@ -684,8 +692,8 @@ async function vClientes(box) {
   <div class="cols"><section class="card stack" id="lista"><div class="empty">Cargando…</div></section><section id="det"></section></div>`;
   const load = async (q) => {
     let rows; try { rows = await rpc('admin_clientes', { p_busqueda: q || '', p_limite: 200 }); } catch (e) { $('#lista').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
-    $('#lista').innerHTML = `<h2 style="font-size:17px;font-weight:800">Clientes (${rows.length}${rows.length === 200 ? '+' : ''})</h2>` + (rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th><th>Favorita</th><th style="text-align:right">Puntos</th><th style="text-align:right">Sellos</th></tr></thead><tbody>
-      ${rows.map((c) => `<tr class="clic ${selCliente === c.id ? 'sel' : ''}" data-c="${c.id}" tabindex="0"><td><b>${esc(c.nombre)}</b>${c.activo ? '' : ' <span class="pill" style="background:#FFE7A8;padding:2px 8px;font-size:10px">Sin activar</span>'}</td><td>${esc(num(c.cedula))}</td><td>${c.fecha_nacimiento ? fdate(c.fecha_nacimiento) : '—'}</td><td class="small">${esc(c.tienda_favorita || '—')}</td><td style="text-align:right;font-weight:700">${num(c.puntos)}</td><td style="text-align:right">${c.sellos}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin resultados.</div>');
+    $('#lista').innerHTML = `<h2 style="font-size:17px;font-weight:800">Clientes (${rows.length}${rows.length === 200 ? '+' : ''})</h2>` + (rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th><th>Favorita · promociones</th><th style="text-align:right">Puntos</th><th style="text-align:right">Sellos</th></tr></thead><tbody>
+      ${rows.map((c) => `<tr class="clic ${selCliente === c.id ? 'sel' : ''}" data-c="${c.id}" tabindex="0"><td><b>${esc(c.nombre)}</b>${c.activo ? '' : ' <span class="pill" style="background:#FFE7A8;padding:2px 8px;font-size:10px">Sin activar</span>'}</td><td>${esc(num(c.cedula))}</td><td>${c.fecha_nacimiento ? fdate(c.fecha_nacimiento) : '—'}</td><td class="small"><b>${esc(c.tienda_favorita || '—')}</b>${c.promo_tiendas ? `<div class="muted">${esc(c.promo_tiendas)}</div>` : ''}</td><td style="text-align:right;font-weight:700">${num(c.puntos)}</td><td style="text-align:right">${c.sellos}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin resultados.</div>');
     $$('[data-c]').forEach((tr) => { const go = () => { selCliente = tr.dataset.c; $$('[data-c]').forEach((x) => x.classList.toggle('sel', x === tr)); detalle(rows.find((x) => x.id === selCliente)); }; tr.onclick = go; tr.onkeydown = (e) => { if (e.key === 'Enter') go(); }; });
     if (selCliente) { const c = rows.find((x) => x.id === selCliente); if (c) detalle(c); }
   };
@@ -693,7 +701,7 @@ async function vClientes(box) {
   $('#imp').onclick = () => importarClientes(() => load(''));
   $('#x-cli').onclick = async () => {
     try { const rows = await rpc('admin_clientes', { p_busqueda: '', p_limite: 100000 });
-      csv([['Cédula', 'Nombre', 'Fecha nacimiento', 'Celular', 'Correo', 'Activo', 'Tienda favorita', 'Puntos', 'Sellos', 'Inscrito en', 'Fecha inscripción'], ...rows.map((c) => [c.cedula, c.nombre, c.fecha_nacimiento, c.celular, c.correo, c.activo ? 'Sí' : 'No', c.tienda_favorita, c.puntos, c.sellos, c.tienda_registro, (c.creado_en || '').slice(0, 10)])], 'clientes-puntos-santana.csv');
+      csv([['Cédula', 'Nombre', 'Fecha nacimiento', 'Celular', 'Correo', 'Activo', 'Tienda favorita', 'Recibe promociones de', 'Puntos', 'Sellos', 'Inscrito en', 'Fecha inscripción'], ...rows.map((c) => [c.cedula, c.nombre, c.fecha_nacimiento, c.celular, c.correo, c.activo ? 'Sí' : 'No', c.tienda_favorita, c.promo_tiendas, c.puntos, c.sellos, c.tienda_registro, (c.creado_en || '').slice(0, 10)])], 'clientes-puntos-santana.csv');
     } catch (e) { toast(errText(e), true); }
   };
   $('#x-tx').onclick = async () => {
@@ -1113,6 +1121,29 @@ async function vAjustes(box) {
     config = Object.fromEntries(rows.map((r) => [r.clave, r.valor])); toast('Ajustes guardados.');
   };
 }
+
+/* ---------- instalar la app en el celular ---------- */
+let promptInstalar = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); promptInstalar = e; document.querySelectorAll('.btn-instalar').forEach((x) => x.classList.remove('hidden')); });
+window.addEventListener('appinstalled', () => { promptInstalar = null; document.querySelectorAll('.btn-instalar').forEach((x) => x.classList.add('hidden')); toast('¡Listo! Puntos Santana quedó en tu pantalla de inicio.'); });
+const esStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const esIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function botonInstalar() {
+  if (esStandalone()) return '';
+  const visible = promptInstalar || esIOS();
+  return `<button type="button" class="btn teal block btn-instalar ${visible ? '' : 'hidden'}" style="position:relative;z-index:1">${ic('plus', 20)} Instalar la app en mi celular</button>`;
+}
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('.btn-instalar'); if (!b) return;
+  if (promptInstalar) { promptInstalar.prompt(); try { await promptInstalar.userChoice; } catch {} promptInstalar = null; return; }
+  dialog(`<h2 style="font-size:20px;font-weight:800">Instalar en iPhone</h2>
+    <ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px;font-size:15px">
+      <li>Abre esta página en <b>Safari</b>.</li>
+      <li>Toca el botón <b>Compartir</b> (el cuadro con la flecha hacia arriba), abajo en la pantalla.</li>
+      <li>Elige <b>“Agregar a pantalla de inicio”</b> y toca <b>Agregar</b>.</li>
+    </ol>
+    <p class="small muted" style="margin:0">Verás el ícono de Puntos Santana junto a tus otras apps.</p>`, async () => {}, 'Entendido');
+});
 
 /* ---------- arranque ---------- */
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
