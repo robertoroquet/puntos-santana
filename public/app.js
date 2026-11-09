@@ -990,16 +990,28 @@ async function vPremios(box) {
     <div class="field"><label for="p-t">Tienda que lo entrega</label><select class="input" id="p-t"><option value="">—</option>${tiendas.map((t) => `<option ${p.tienda === t.nombre ? 'selected' : ''}>${esc(t.nombre)}</option>`).join('')}</select></div>
     <div class="field"><label for="p-f">Foto del premio</label>
       <div class="row" style="gap:14px;align-items:center"><div id="p-prev" style="width:96px;height:96px;border-radius:16px;background:#FFE7A8;overflow:hidden;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">${p.imagen_url ? `<img src="${esc(p.imagen_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : 'Sin foto'}</div>
-      <div class="stack" style="gap:6px;flex:1"><input class="input" id="p-f" type="file" accept="image/*" style="padding:10px;height:auto"><span class="small muted">JPG o PNG. Se ajusta sola al tamaño correcto.</span>${p.imagen_url ? '<label class="check small"><input type="checkbox" id="p-del">Quitar la foto actual</label>' : ''}</div></div></div>`, async (dl) => {
+      <div class="stack" style="gap:6px;flex:1"><input class="input" id="p-f" type="file" accept="image/*" style="padding:10px;height:auto"><span class="small muted">JPG o PNG. Se ajusta sola al tamaño correcto.</span>${p.imagen_url ? '<label class="check small"><input type="checkbox" id="p-del">Quitar la foto actual</label>' : ''}</div></div>
+      <div class="stack" style="gap:6px;margin-top:6px"><span class="small" style="font-weight:600">O elige una foto de la galería:</span><div id="p-gal" class="gal"><span class="small muted">Cargando…</span></div></div></div>`, async (dl) => {
     const row = { nombre: $('#p-n', dl).value.trim(), descripcion: $('#p-d', dl).value.trim() || null, puntos: Number(digits($('#p-p', dl).value)), stock: $('#p-s', dl).value.trim() === '' ? null : Number(digits($('#p-s', dl).value)), tienda: $('#p-t', dl).value || null, imagen_url: p.imagen_url || null };
     const del = $('#p-del', dl); if (del && del.checked) row.imagen_url = null;
+    const gsel = dl.querySelector('#p-gal [aria-pressed="true"]'); if (gsel) row.imagen_url = gsel.dataset.url;
     const file = $('#p-f', dl).files[0];
     if (file) row.imagen_url = await subirFotoPremio(file);
     if (!row.nombre || !row.puntos) { toast('Escribe el nombre y los puntos.', true); return false; }
     const q = p.id ? sb.from('premios').update(row).eq('id', p.id) : sb.from('premios').insert(row);
     const { error: e } = await q; if (e) throw e; toast('Premio guardado.'); vPremios(box);
   });
-  const conVista = (fn) => () => { fn(); const f = document.querySelector('dialog #p-f'); if (f) f.onchange = () => { const x = f.files[0]; if (x) document.querySelector('dialog #p-prev').innerHTML = `<img src="${URL.createObjectURL(x)}" alt="" style="width:100%;height:100%;object-fit:cover">`; }; };
+  const conVista = (fn) => () => {
+    fn();
+    const f = document.querySelector('dialog #p-f'), prev = document.querySelector('dialog #p-prev'), gal = document.querySelector('dialog #p-gal');
+    if (f) f.onchange = () => { const x = f.files[0]; if (x) { prev.innerHTML = `<img src="${URL.createObjectURL(x)}" alt="" style="width:100%;height:100%;object-fit:cover">`; gal.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', 'false')); } };
+    if (gal) sb.storage.from('premios').list('', { limit: 100, sortBy: { column: 'created_at', order: 'desc' } }).then(({ data: fotos, error }) => {
+      const lista = (fotos || []).filter((o) => /\.(jpe?g|webp)$/i.test(o.name));
+      if (error || !lista.length) { gal.innerHTML = '<span class="small muted">Aún no hay fotos en la galería.</span>'; return; }
+      gal.innerHTML = lista.map((o) => { const u = sb.storage.from('premios').getPublicUrl(o.name).data.publicUrl; return `<button type="button" aria-pressed="false" data-url="${esc(u)}" aria-label="Usar ${esc(o.name)}"><img src="${esc(u)}" alt="" loading="lazy"></button>`; }).join('');
+      gal.querySelectorAll('button').forEach((b) => b.onclick = () => { gal.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b)); prev.innerHTML = `<img src="${b.dataset.url}" alt="" style="width:100%;height:100%;object-fit:cover">`; if (f) f.value = ''; });
+    });
+  };
   $('#nuevo').onclick = conVista(() => form());
   $$('[data-ed]').forEach((b) => b.onclick = conVista(() => form(data.find((x) => x.id === b.dataset.ed))));
 }
