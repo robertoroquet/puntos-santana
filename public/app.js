@@ -327,11 +327,11 @@ async function staffRoute(view) {
   if (!p) return staffLogin();
   const isAdmin = p.rol === 'admin';
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
-  const adminOnly = ['dashboard', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
+  const adminOnly = ['dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
   staffShell(view);
   const box = $('#content');
-  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes };
+  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes };
   (views[view] || vAcumular)(box);
 }
 
@@ -361,7 +361,7 @@ function staffShell(view) {
   const isAdmin = perfil.rol === 'admin';
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
-    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
+    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('informe', 'chart', 'Informe mensual')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
     : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
@@ -764,6 +764,78 @@ function dialog(inner, onOk, okLabel = 'Guardar') {
     catch (er) { toast(errText(er), true); b.disabled = false; }
   };
   const f = dl.querySelector('input,select,textarea'); if (f) f.focus();
+}
+
+/* ---- Informe mensual por tienda (presupuesto de facturas) ---- */
+let informeMes = (() => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth(), 1)); })();
+async function vInforme(box) {
+  const m = new Date(informeMes + 'T12:00:00');
+  const titulo = `${MESES_L[m.getMonth()]} ${m.getFullYear()}`;
+  const opciones = Array.from({ length: 13 }, (_, i) => { const d = new Date(); const x = new Date(d.getFullYear(), d.getMonth() - i, 1); return [iso(x), `${MESES_L[x.getMonth()]} ${x.getFullYear()}`]; });
+  box.innerHTML = `<div class="row between wrap no-print"><h1 style="font-size:30px;font-weight:800">Informe mensual por tienda</h1>
+    <div class="row wrap"><label for="i-mes" class="small" style="font-weight:600">Mes</label><select class="input" id="i-mes" style="width:210px;height:44px">${opciones.map(([v, l]) => `<option value="${v}" ${v === informeMes ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <button class="btn ghost sm" id="i-x">Exportar Excel</button><button class="btn ghost sm" id="i-p">Imprimir / PDF</button><button class="btn coral sm" id="i-meta">Cargar presupuesto</button></div></div>
+    <h1 class="only-print" style="font-size:26px;font-weight:800">Puntos Santana · Informe de ${titulo}</h1>
+    <div id="i-body"><div class="empty">Cargando…</div></div>`;
+  $('#i-mes').onchange = (e) => { informeMes = e.target.value; vInforme(box); };
+  $('#i-p').onclick = () => window.print();
+  let d; try { d = await rpc('admin_informe_mensual', { p_mes: informeMes }); } catch (e) { $('#i-body').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+  const T = d.tiendas.map((t) => ({ ...t, pct: t.meta ? Math.round(t.facturas / t.meta * 100) : null }));
+  const conMeta = T.filter((t) => t.meta);
+  const totF = T.reduce((a, t) => a + t.facturas, 0), totMeta = conMeta.reduce((a, t) => a + t.meta, 0);
+  const totFconMeta = conMeta.reduce((a, t) => a + t.facturas, 0);
+  const pctG = totMeta ? Math.round(totFconMeta / totMeta * 100) : null;
+  const color = (p) => p == null ? '#C9C1AE' : p >= 100 ? '#1B6B3A' : p >= 70 ? '#F6A21E' : '#EB5440';
+  const estado = (p) => p == null ? 'Sin meta' : p >= 100 ? 'Cumplió' : p >= 70 ? 'Cerca' : 'Por debajo';
+  const rank = [...T].sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.facturas - a.facturas);
+  const hoy = new Date(), esActual = m.getMonth() === hoy.getMonth() && m.getFullYear() === hoy.getFullYear();
+  const diasMes = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+  const avanceMes = esActual ? Math.round(hoy.getDate() / diasMes * 100) : 100;
+  const maxDia = Math.max(1, ...d.por_dia.map((x) => x.facturas));
+  const dias = Array.from({ length: diasMes }, (_, i) => (d.por_dia.find((x) => x.dia === i + 1) || {}).facturas || 0);
+  const K = (l, v, c, sub) => `<div class="kpi"><div class="dot" style="background:${c}"></div><span>${l}</span><b>${v}</b>${sub ? `<span class="small">${sub}</span>` : ''}</div>`;
+  const delta = (t) => { const x = t.facturas - t.facturas_anterior; return x === 0 ? '<span class="muted">=</span>' : `<span style="color:${x > 0 ? '#1B6B3A' : '#C2402F'};font-weight:700">${x > 0 ? '▲' : '▼'} ${Math.abs(x)}</span>`; };
+  $('#i-body').innerHTML = `<div class="stack" style="gap:20px">
+    ${esActual ? `<div class="card small" style="border-color:var(--yellow);background:#FFFBEA">Mes en curso: van ${hoy.getDate()} de ${diasMes} días (${avanceMes}% del mes). Una tienda va al día si su cumplimiento está cerca del ${avanceMes}%.</div>` : ''}
+    <div class="kpis">
+      ${K('Facturas registradas', num(totF), 'var(--navy)')}
+      ${K('Presupuesto de facturas', totMeta ? num(totMeta) : '—', 'var(--teal)', conMeta.length ? `${conMeta.length} de ${T.length} tiendas con meta` : 'Sin presupuesto cargado')}
+      ${K('Cumplimiento general', pctG == null ? '—' : pctG + '%', color(pctG))}
+      ${K('Puntos acumulados', num(T.reduce((a, t) => a + t.puntos, 0)), 'var(--sun)')}
+      ${K('Ventas registradas', money(T.reduce((a, t) => a + Number(t.ventas), 0)), 'var(--coral)')}
+      ${K('Clientes nuevos activos', num(d.nuevos), 'var(--yellow)')}
+    </div>
+    <div class="cols">
+      <section class="card stack"><h2 style="font-size:18px;font-weight:800">Facturas vs. presupuesto</h2>
+        ${T.map((t) => { const top = Math.max(t.meta || 0, t.facturas, 1); const ref = Math.max(...T.map((x) => Math.max(x.meta || 0, x.facturas)), 1);
+          return `<div class="ibar"><b>${esc(t.nombre)}</b><div class="ibar-t" title="${t.facturas} de ${t.meta ?? '—'}"><div style="width:${Math.round(t.facturas / ref * 100)}%;background:${color(t.pct)}"></div>${t.meta ? `<i style="left:${Math.min(100, Math.round(t.meta / ref * 100))}%"></i>` : ''}</div><span>${num(t.facturas)}${t.meta ? ' / ' + num(t.meta) : ''}</span></div>`; }).join('')}
+        <div class="row wrap small" style="gap:14px"><span><i class="lg" style="background:#1B6B3A"></i>Cumplió</span><span><i class="lg" style="background:#F6A21E"></i>70–99%</span><span><i class="lg" style="background:#EB5440"></i>Menos de 70%</span><span><i class="lg" style="background:var(--navy);width:3px"></i>Meta</span></div>
+      </section>
+      <section class="card stack"><h2 style="font-size:18px;font-weight:800">Facturas registradas por día</h2>
+        <div class="days">${dias.map((n, i) => `<div title="Día ${i + 1}: ${n} facturas"><div style="height:${Math.round(n / maxDia * 100)}%"></div><span>${(i + 1) % 5 === 0 || i === 0 ? i + 1 : ''}</span></div>`).join('')}</div>
+        <span class="small muted">Puntos redimidos en el mes: <b>${num(d.redimidos)}</b></span>
+      </section>
+    </div>
+    <section class="card stack"><h2 style="font-size:18px;font-weight:800">Ranking de tiendas · ${titulo}</h2>
+      <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th style="text-align:right">Facturas</th><th style="text-align:right">Meta</th><th>Cumplimiento</th><th style="text-align:right">Puntos</th><th style="text-align:right">Ventas</th><th style="text-align:right">Clientes</th><th style="text-align:right">vs. mes anterior</th></tr></thead><tbody>
+      ${rank.map((t, i) => `<tr><td><b>${i + 1}</b></td><td><b>${esc(t.nombre)}</b>${t.sellos ? `<div class="small muted">${num(t.sellos)} sellos</div>` : ''}</td><td style="text-align:right;font-weight:800">${num(t.facturas)}</td><td style="text-align:right">${t.meta ? num(t.meta) : '—'}</td>
+        <td style="min-width:170px"><div class="row" style="gap:8px"><div class="bar" style="flex:1;height:10px"><div style="width:${Math.min(100, t.pct || 0)}%;background:${color(t.pct)}"></div></div><b style="color:${color(t.pct)};min-width:44px;text-align:right">${t.pct == null ? '—' : t.pct + '%'}</b></div><span class="small" style="color:${color(t.pct)}">${estado(t.pct)}</span></td>
+        <td style="text-align:right">${num(t.puntos)}</td><td style="text-align:right">${money(t.ventas)}</td><td style="text-align:right">${num(t.clientes)}</td><td style="text-align:right">${delta(t)}</td></tr>`).join('')}
+      </tbody></table></div>
+    </section></div>`;
+  $('#i-x').onclick = () => csv([['Mes', 'Puesto', 'Tienda', 'Facturas', 'Meta facturas', 'Cumplimiento %', 'Puntos', 'Ventas', 'Clientes', 'Facturas mes anterior'], ...rank.map((t, i) => [titulo, i + 1, t.nombre, t.facturas, t.meta ?? '', t.pct ?? '', t.puntos, t.ventas, t.clientes, t.facturas_anterior])], `informe-tiendas-${informeMes.slice(0, 7)}.csv`);
+  $('#i-meta').onclick = () => {
+    dialog(`<h2 style="font-size:20px;font-weight:800">Presupuesto de facturas · ${titulo}</h2>
+      <p class="small muted" style="margin:0">Cuántas facturas debe registrar cada tienda en el mes. Deja vacío si una tienda no tiene meta.</p>
+      <button type="button" class="btn ghost sm" id="m-copy" style="align-self:flex-start">Copiar metas del mes anterior</button>
+      <div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-height:46vh;overflow:auto">
+      ${T.map((t) => `<div class="field"><label for="m-${t.id}">${esc(t.nombre)}</label><input class="input" id="m-${t.id}" data-meta="${t.id}" data-ant="${t.meta_anterior ?? ''}" inputmode="numeric" value="${t.meta ?? ''}" style="height:46px"></div>`).join('')}</div>`, async (dl) => {
+      const metas = {}; dl.querySelectorAll('[data-meta]').forEach((i) => { const v = i.value.replace(/\D/g, ''); metas[i.dataset.meta] = v === '' ? '' : Number(v); });
+      await rpc('admin_guardar_presupuesto', { p_mes: informeMes, p_metas: metas }); toast('Presupuesto guardado.'); vInforme(box);
+    });
+    const cp = document.querySelector('dialog #m-copy');
+    if (cp) cp.onclick = () => document.querySelectorAll('dialog [data-meta]').forEach((i) => { if (i.dataset.ant !== '') i.value = i.dataset.ant; });
+  };
 }
 
 /* ---- Importar clientes desde Excel ---- */
