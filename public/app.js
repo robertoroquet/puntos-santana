@@ -59,7 +59,9 @@ const ERR = {
   YA_ACTIVO: 'Este cliente ya tiene su cuenta activa.',
   CELULAR_INVALIDO: 'Escribe un celular válido.',
   NACIMIENTO_INVALIDO: 'Revisa la fecha de nacimiento.',
-  TIENDA_FAVORITA_REQUERIDA: 'Elige la tienda favorita del cliente.'
+  TIENDA_FAVORITA_REQUERIDA: 'Elige la tienda favorita del cliente.',
+  MOTIVO_REQUERIDO: 'Escribe el motivo.',
+  TARJETA_VACIA: 'La tarjeta no tiene sellos.'
 };
 function errText(e) {
   const m = (e && (e.message || e.error || e)) + '';
@@ -162,6 +164,20 @@ function clientLogin() {
 
 async function loadInicio() { cInicio = await clientCall('cliente_inicio'); return cInicio; }
 
+/* Historial de la tarjeta de sellos (personal y administrador) */
+function historialSellos(f) {
+  const det = f.sellos_detalle || [], meta = f.sellos_meta || 8;
+  const filas = det.map((x, i) => `<tr><td><b>${i + 1}</b></td><td>${fdate(x.fecha)}<div class="small muted">${esc(x.hora || '')}</div></td><td><b>${esc(x.factura || '—')}</b></td><td>${esc(x.tienda || '—')}</td><td class="small">${esc(x.marcado_por || '—')}</td></tr>`).join('');
+  const ant = (f.tarjetas_anteriores || []).map((t) => `<details class="small" style="border-top:1px solid var(--line);padding-top:8px"><summary style="cursor:pointer"><b>${t.estado === 'entregada' ? 'Regalo entregado' : 'Tarjeta reiniciada'}</b> el ${fdate(t.fecha)}${t.tienda ? ' en ' + esc(t.tienda) : ''}${t.por ? ' · ' + esc(t.por) : ''}${t.motivo ? ` · <span class="muted">${esc(t.motivo)}</span>` : ''}</summary>
+    <div class="muted" style="margin-top:6px">${(t.sellos || []).map((x) => `${fdate(x.fecha)} (${esc(x.factura || '—')})`).join(' · ')}</div></details>`).join('');
+  return `<section class="card stack" style="gap:10px">
+    <div class="row between wrap"><h2 style="font-size:17px;font-weight:800">Historial de sellos · tarjeta actual</h2><span class="pill ${det.length >= meta ? 'sun' : 'navy'}">${det.length}/${meta}</span></div>
+    <div class="small"><b>${esc(f.nombre)}</b> · C.C. ${esc(num(f.cedula))}</div>
+    ${det.length ? `<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Fecha</th><th>Factura</th><th>Marcado en</th><th>Por</th></tr></thead><tbody>${filas}</tbody></table></div>` : '<div class="empty" style="padding:14px">Aún no tiene sellos en esta tarjeta.</div>'}
+    ${ant ? `<div class="stack" style="gap:6px"><b class="small">Tarjetas anteriores</b>${ant}</div>` : ''}
+  </section>`;
+}
+
 /* Tarjeta digital de sellos (la ven el cliente y el personal) */
 function stampCard(d, quien) {
   const meta = d.sellos_meta || 8;
@@ -178,7 +194,11 @@ function stampCard(d, quien) {
     return `<div class="slot ${ultimo ? 'gift' : ''}" aria-label="${ultimo ? 'Sello 8: regalo' : 'Sello ' + (i + 1) + ' pendiente'}">${ultimo ? ic('gift', 22, 2) + '<span>REGALO</span>' : `<b>${i + 1}</b>`}</div>`;
   }).join('');
   let pie;
-  if (llena) pie = quien === 'cliente' ? `<div class="sc-done">¡Tarjeta completa! Reclama tu regalo en caja: <b>${esc(d.regalo_sellos)}</b></div>` : `<div class="sc-done">Tarjeta completa. Entrega el regalo: <b>${esc(d.regalo_sellos)}</b></div>`;
+  if (llena) pie = quien === 'cliente'
+    ? (d.regalo_pedido
+      ? `<div class="sc-done" style="text-align:center"><div style="font-size:18px;font-weight:900">Regalo listo para reclamar</div><div style="margin:4px 0 8px">${esc(d.regalo_sellos)}</div><div style="background:#fff;border-radius:12px;padding:10px"><div class="small muted">Muestra esta pantalla en caja</div><b style="font-size:17px">${esc(d.nombre || '')}</b><div>C.C. ${esc(num(d.cedula || ''))}</div></div><div class="small" style="margin-top:8px">El cajero verifica tus 8 sellos y te pide tu PIN.</div></div>`
+      : `<div class="sc-done" style="text-align:center"><div style="font-size:18px;font-weight:900">¡Completaste tu tarjeta!</div><div style="margin:4px 0 10px">Tu regalo: <b>${esc(d.regalo_sellos)}</b></div><button class="btn coral block" id="redimir-sellos" style="height:56px;font-size:17px">Redimir mi regalo</button></div>`)
+    : `<div class="sc-done">Tarjeta completa. Verifica el historial y entrega el regalo: <b>${esc(d.regalo_sellos)}</b></div>`;
   else pie = `<div class="sc-foot">${faltan === 1 ? 'Te falta <b>1 sello</b>' : `Te faltan <b>${faltan} sellos</b>`} para tu regalo: ${esc(d.regalo_sellos)}</div>`;
   if (quien !== 'cliente' && !llena) pie = pie.replace('Te falta', 'Le falta').replace('Te faltan', 'Le faltan').replace('tu regalo', 'el regalo');
   return `<section class="stampcard" aria-label="Tarjeta de sellos">
@@ -224,6 +244,7 @@ async function clientInicio() {
     ${pend ? `<section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Premios por reclamar</h2>${pend}</section>` : ''}
     <section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Últimos movimientos</h2>${mov}</section>
   </div>${tabbar('inicio')}</div>`;
+  const rs = $('#redimir-sellos'); if (rs) rs.onclick = async () => { rs.disabled = true; try { await clientCall('cliente_solicitar', { p_premio: null }); toast('¡Listo! Muestra tu pantalla en caja para recibir tu regalo.'); clientInicio(); } catch (e) { toast(errText(e), true); rs.disabled = false; } };
   activarPush(true).catch(() => {});
   const pb = $('#push-on'); if (pb) pb.onclick = async () => { pb.disabled = true; try { const r = await activarPush(false); if (r === 'ok') { toast('¡Notificaciones activadas!'); const c = $('#push-card'); if (c) c.remove(); } else { toast(r === 'denied' ? 'No se activaron: las bloqueaste en el navegador.' : 'No se pudieron activar en este celular.', true); pb.disabled = false; } } catch (e) { toast('No se pudieron activar las notificaciones.', true); pb.disabled = false; } };
   $('#fav').onclick = async () => {
@@ -573,11 +594,11 @@ function vSellos(box) {
     box2.innerHTML = `<div class="cols">
       <div>${stampCard(ficha, 'personal')}</div>
       ${llena ? `<form class="navy-card" id="gf" novalidate>
-          <h2 style="font-size:20px;font-weight:800">Entregar regalo</h2>
+          <h2 style="font-size:20px;font-weight:800">Entregar regalo y reiniciar tarjeta</h2>
           <p style="margin:0;color:#CFE9F0;font-size:14px">Regalo: <b style="color:#fff">${esc(ficha.regalo_sellos)}</b>. Pide al cliente su PIN para confirmar.</p>
           <div class="field"><label for="g-pin">PIN del cliente</label><input class="input pin" id="g-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
-          <button class="btn coral block" style="height:56px">Confirmar entrega del regalo</button>
-          <span class="small" style="color:#CFE9F0">La tarjeta vuelve a empezar desde cero.</span>
+          <button class="btn coral block" style="height:56px">Entregar regalo y reiniciar tarjeta</button>
+          <span class="small" style="color:#CFE9F0">Antes de entregar, revisa abajo las 8 facturas y fechas. Al confirmar, la tarjeta se reinicia desde cero.</span>
         </form>`
       : `<form class="navy-card" id="sf2" novalidate>
           <h2 style="font-size:20px;font-weight:800">Nuevo sello</h2>
@@ -586,7 +607,8 @@ function vSellos(box) {
           <label class="check" style="color:#fff"><input type="checkbox" id="fuerte"><span>Confirmo que la factura incluye una <b>comida fuerte</b></span></label>
           <button class="btn coral block" style="height:60px;font-size:17px">Marcar sello</button>`}
         </form>`}
-    </div>`;
+    </div>
+    <div style="margin-top:20px">${historialSellos(ficha)}</div>`;
     const sf2 = $('#sf2');
     if (sf2 && $('#fac')) {
       $('#fac').focus();
@@ -725,7 +747,20 @@ async function vClientes(box) {
         <td>${t.valor_compra ? money(t.valor_compra) : '—'}</td><td style="font-weight:800;color:${t.puntos < 0 ? 'var(--coral-t)' : 'var(--teal-d)'}">${t.puntos > 0 ? '+' : ''}${num(t.puntos)}</td><td>${t.vence_en ? fdate(t.vence_en) : '—'}</td>
         <td style="white-space:nowrap;text-align:right">${t.tipo === 'acumulacion' && !t.anulada ? `<button class="btn ghost sm" data-ed="${t.id}">Editar</button> <button class="btn ghost sm" data-an="${t.id}">Anular</button>` : (t.anulada ? '<span class="small">Anulada</span>' : '')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin movimientos.</td></tr>'}
       </tbody></table></div>
-      <p class="small muted" style="margin:0">Cada edición o anulación queda en el historial con fecha, usuario y motivo. Los puntos se recalculan solos.</p></div>`;
+      <p class="small muted" style="margin:0">Cada edición o anulación queda en el historial con fecha, usuario y motivo. Los puntos se recalculan solos.</p></div>
+      <div id="det-sellos" style="margin-top:20px"></div>`;
+    rpc('buscar_cliente', { p_cedula: c.cedula }).then((f) => {
+      if (!f) return;
+      const box = $('#det-sellos'); if (!box) return;
+      box.innerHTML = historialSellos(f) + (f.sellos > 0 ? `<div class="row wrap" style="margin-top:12px"><button class="btn ghost sm" id="reini">Reiniciar tarjeta de sellos</button>${f.sellos >= (f.sellos_meta || 8) ? '<a class="btn coral sm" href="#/personal/sellos" id="ir-regalo">Entregar regalo</a>' : ''}</div>` : '');
+      const ir = $('#ir-regalo'); if (ir) ir.onclick = () => { ficha = f; };
+      const rb = $('#reini'); if (rb) rb.onclick = () => dialog(`<h2 style="font-size:20px;font-weight:800">Reiniciar tarjeta de sellos</h2>
+        <p class="muted" style="margin:0">Se borran los ${f.sellos} sellos actuales de ${esc(f.nombre)} <b>sin entregar regalo</b> (por ejemplo, por un error o un sello mal marcado). Queda registrado con tu motivo.</p>
+        <div class="field"><label for="d-rm">Motivo *</label><input class="input" id="d-rm"></div>`, async (dl) => {
+        const m = $('#d-rm', dl).value.trim(); if (!m) { toast('Escribe el motivo.', true); return false; }
+        await rpc('admin_reiniciar_tarjeta', { p_cliente: c.id, p_motivo: m }); toast('Tarjeta reiniciada.'); load($('#q').value.trim());
+      }, 'Reiniciar');
+    }).catch(() => {});
     $$('[data-ed]').forEach((b) => b.onclick = () => {
       const t = tx.find((x) => x.id === b.dataset.ed);
       dialog(`<h2 style="font-size:20px;font-weight:800">Editar compra</h2>
