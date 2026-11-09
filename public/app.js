@@ -61,6 +61,9 @@ const ERR = {
   NACIMIENTO_INVALIDO: 'Revisa la fecha de nacimiento.',
   TIENDA_FAVORITA_REQUERIDA: 'Elige la tienda favorita del cliente.',
   MOTIVO_REQUERIDO: 'Escribe el motivo.',
+  TITULAR_REQUERIDO: 'Escribe el nombre o la cédula que aparece en la factura.',
+  CEDULA_NO_COINCIDE: 'La cédula de la factura no es la de este cliente. Solo el titular puede acumular sus facturas.',
+  VERIFICAR_CEDULA: 'Confirma que verificaste la cédula física del cliente.',
   TARJETA_VACIA: 'La tarjeta no tiene sellos.'
 };
 function errText(e) {
@@ -201,7 +204,8 @@ function stampCard(d, quien) {
     : `<div class="sc-done">Tarjeta completa. Verifica el historial y entrega el regalo: <b>${esc(d.regalo_sellos)}</b></div>`;
   else pie = `<div class="sc-foot">${faltan === 1 ? 'Te falta <b>1 sello</b>' : `Te faltan <b>${faltan} sellos</b>`} para tu regalo: ${esc(d.regalo_sellos)}</div>`;
   if (quien !== 'cliente' && !llena) pie = pie.replace('Te falta', 'Le falta').replace('Te faltan', 'Le faltan').replace('tu regalo', 'el regalo');
-  return `<section class="stampcard" aria-label="Tarjeta de sellos">
+  const compacta = quien === 'cliente' && !llena;
+  return `<section class="stampcard${compacta ? ' compact' : ''}" aria-label="Tarjeta de sellos">
     <header><img src="${LOGO}" alt=""><div><b>Tarjeta de sellos</b><span>Restaurante · Santana del Río</span></div><em>${n}/${meta}</em></header>
     <div class="slots">${slots}</div>
     ${pie}
@@ -211,7 +215,16 @@ function stampCard(d, quien) {
 
 async function clientInicio() {
   app.innerHTML = `<div class="phone"><div class="phone-body"><div class="empty">Cargando…</div></div>${tabbar('inicio')}</div>`;
-  let d; try { d = await loadInicio(); } catch (e) { if (tok()) toast(errText(e), true); return; }
+  let d, prem = []; try { [d, prem] = await Promise.all([loadInicio(), clientCall('cliente_premios').catch(() => [])]); } catch (e) { if (tok()) toast(errText(e), true); return; }
+  const reservado = (d.solicitudes || []).reduce((acc, x) => acc + (x.tipo === 'premio' ? (x.puntos || 0) : 0), 0);
+  const disp = Math.max(0, d.puntos - reservado);
+  const activos = (prem || []).filter((x) => !x.agotado).sort((x, y) => x.puntos - y.puntos);
+  const alcanzables = activos.filter((x) => x.puntos <= disp);
+  const proximo = activos.find((x) => x.puntos > disp);
+  const metaHtml = proximo
+    ? `<div class="next"><div class="next-img">${proximo.imagen_url ? `<img src="${esc(proximo.imagen_url)}" alt="">` : ic('gift', 22)}</div><div style="flex:1;min-width:0"><div class="next-t">Tu próximo premio: <b>${esc(proximo.nombre)}</b></div><div class="next-bar"><div style="width:${Math.min(100, Math.round(disp / proximo.puntos * 100))}%"></div></div><div class="next-t">Te faltan <b>${num(proximo.puntos - disp)} pts</b></div></div></div>`
+    : '';
+  const yaPuede = alcanzables.length ? `<a class="btn coral block" href="#/premios" style="margin-top:12px;position:relative">${ic('gift', 20)} ¡Ya puedes redimir ${alcanzables.length === 1 ? '1 premio' : alcanzables.length + ' premios'}!</a>` : '';
   const pv = d.proximo_vencimiento;
   const mov = (d.movimientos || []).map((m) => {
     const red = m.tipo === 'redencion';
@@ -231,11 +244,13 @@ async function clientInicio() {
       <div><span class="muted" style="font-size:13px">¡Hola!</span><h1 style="font-size:22px;font-weight:800">${esc(d.nombre)}</h1></div>
       <button class="btn ghost sm" id="salir" aria-label="Cerrar sesión">${ic('logout', 18)}Salir</button>
     </div>
-    <section class="balance" aria-label="Tus puntos">${SUN}
+    <section class="balance big" aria-label="Tus puntos">${SUN}
       <span class="lbl">Tus puntos disponibles</span>
-      <span class="num">${num(d.puntos)}</span>
+      <span class="num">${num(d.puntos)}<small> pts</small></span>
       <span class="lbl" style="font-size:12px">Ganas 25 puntos por cada $1.000 de compra</span>
+      ${metaHtml}
       ${pv && pv.puntos ? `<div class="warn">${ic('clock', 20).replace('currentColor', '#FFD23F')}<span>${num(pv.puntos)} pts vencen el <b>${fdate(pv.fecha)}</b></span></div>` : ''}
+      ${yaPuede}
     </section>
     ${stampCard(d, 'cliente')}
     <div class="card row between wrap" style="gap:10px"><div><span class="small muted">Tu tienda favorita</span><div style="font-weight:800;font-size:16px">${esc(d.tienda_favorita || 'Sin elegir')}</div><span class="small muted">Elige también de qué tiendas quieres recibir promociones.</span></div><button class="btn ghost sm" id="fav">Mis tiendas</button></div>
@@ -429,8 +444,26 @@ function clientBar(f) {
     <div style="flex:1;min-width:160px"><div class="row wrap" style="gap:8px"><b style="font-size:18px">${esc(f.nombre)}</b>${cumple}${f.activo ? '' : '<span class="pill" style="background:#FFE7A8">Sin activar</span>'}</div><div class="small muted">C.C. ${esc(num(f.cedula))}${f.celular_fin ? ' · Cel. ••• ' + esc(f.celular_fin) : ''}</div></div>
     <div class="kv"><span>Puntos</span><b>${num(f.puntos)}</b></div>
     <div class="kv"><span>Sellos</span><b style="color:var(--coral-t)">${f.sellos}/${meta}</b></div>
+    ${f.activo ? '<button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>' : ''}
   </div>${act}`;
 }
+// Restablecer PIN en tienda (verificando la cédula física)
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#rpin-btn') || !ficha) return;
+  dialog(`<h2 style="font-size:20px;font-weight:800">Restablecer PIN</h2>
+    <p class="muted" style="margin:0">${esc(ficha.nombre)} · C.C. ${esc(num(ficha.cedula))}. El cliente elige su nuevo PIN.</p>
+    <div class="grid" style="grid-template-columns:1fr 1fr"><div class="field"><label for="r-p1">Nuevo PIN</label><input class="input pin" id="r-p1" type="password" inputmode="numeric" maxlength="4"></div>
+    <div class="field"><label for="r-p2">Repetir PIN</label><input class="input pin" id="r-p2" type="password" inputmode="numeric" maxlength="4"></div></div>
+    <label class="check"><input type="checkbox" id="r-ok"><span>Verifiqué la <b>cédula física</b> del cliente y coincide con este registro.</span></label>`, async (dl) => {
+    const a = dl.querySelector('#r-p1').value, b = dl.querySelector('#r-p2').value;
+    if (!/^\d{4}$/.test(a)) { toast(ERR.PIN_INVALIDO, true); return false; }
+    if (a !== b) { toast('Los dos PIN no coinciden.', true); return false; }
+    if (!dl.querySelector('#r-ok').checked) { toast(ERR.VERIFICAR_CEDULA, true); return false; }
+    ficha = await rpc('restablecer_pin_tienda', { p_cedula: ficha.cedula, p_pin: a, p_verifico: true });
+    toast('PIN restablecido. El cliente ya puede entrar con su nuevo PIN.');
+  }, 'Restablecer');
+});
+
 // Activación de clientes importados (formulario dentro de la ficha)
 document.addEventListener('submit', async (e) => {
   if (e.target.id !== 'actf') return;
@@ -509,12 +542,12 @@ function vNuevo(box) {
 function vAcumular(box) {
   const s = searchBox(() => draw());
   const ppm = Number(config.puntos_por_mil || 25), meses = Number(config.vigencia_meses || 12);
-  let tienda = null, valor = 0, fnum = '', ffecha = iso(new Date()), fnom = '';
+  let tienda = null, valor = 0, fnum = '', ffecha = iso(new Date()), fnom = '', fced = '';
   box.innerHTML = `<h1 style="font-size:28px;font-weight:800">Acumular compra</h1>
-  <p class="muted" style="margin:0">Siempre con la factura en la mano. La factura debe estar <b>a nombre del cliente</b>: no se acumulan facturas de otra persona.</p>${s.html}<div id="acc"></div>`;
+  <p class="muted" style="margin:0">Siempre con la factura en la mano. La factura debe estar <b>a nombre del cliente o traer su cédula</b>: no se acumulan facturas de otra persona.</p>${s.html}<div id="acc"></div>`;
   s.bind();
   function vence() { const d = new Date(ffecha + 'T12:00:00'); d.setMonth(d.getMonth() + meses); return fdate(d); }
-  function ready() { return tienda && valor > 0 && fnum.trim() && ffecha && fnom.trim(); }
+  function ready() { return tienda && valor > 0 && fnum.trim() && ffecha && (fnom.trim() || digits(fced)); }
   function draw() {
     const acc = $('#acc');
     if (!ficha) { acc.innerHTML = ''; return; }
@@ -531,7 +564,11 @@ function vAcumular(box) {
           <div class="field"><label for="f-num">Número de factura</label><input class="input" id="f-num" autocomplete="off" style="text-transform:uppercase" value="${esc(fnum)}"></div>
           <div class="field"><label for="f-fecha">Fecha de la factura</label><input class="input" id="f-fecha" type="date" max="${iso(new Date())}" value="${esc(ffecha)}"></div>
         </div>
-        <div class="field"><label for="f-nom">Nombre que aparece en la factura</label><input class="input" id="f-nom" autocomplete="off" value="${esc(fnom)}" placeholder="Debe coincidir con: ${esc(ficha.nombre)}"></div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+          <div class="field"><label for="f-nom">Nombre en la factura</label><input class="input" id="f-nom" autocomplete="off" value="${esc(fnom)}" placeholder="${esc(ficha.nombre)}"></div>
+          <div class="field"><label for="f-ced">Cédula en la factura</label><input class="input" id="f-ced" inputmode="numeric" autocomplete="off" value="${esc(fced)}" placeholder="Si la trae"></div>
+        </div>
+        <span class="small" style="color:#CFE9F0;margin-top:-6px">Basta con uno: el nombre del cliente o su cédula. Si la factura dice "Consumidor final", usa la cédula.</span>
         <label for="valor" style="font-size:13px;font-weight:600">Valor de la factura</label>
         <div class="money"><span>$</span><input id="valor" inputmode="numeric" autocomplete="off" value="${valor ? num(valor) : ''}"></div>
         <div style="background:rgba(255,255,255,.1);border-radius:16px;padding:14px" class="stack">
@@ -549,6 +586,7 @@ function vAcumular(box) {
     vi.oninput = () => { valor = Number(digits(vi.value)); vi.value = valor ? num(valor) : ''; $('#pts').textContent = '+' + num(Math.floor(valor / 1000) * ppm); upd(); };
     $('#f-num').oninput = (e) => { fnum = e.target.value; upd(); };
     $('#f-nom').oninput = (e) => { fnom = e.target.value; upd(); };
+    $('#f-ced').oninput = (e) => { fced = e.target.value; upd(); };
     $('#f-fecha').oninput = (e) => { ffecha = e.target.value; if (ffecha) $('#vence').textContent = `${ppm} pts por cada $1.000 · vencen el ${vence()}`; upd(); };
     $('#reg').onclick = () => {
       const pts = Math.floor(valor / 1000) * ppm;
@@ -559,15 +597,15 @@ function vAcumular(box) {
           ${fila('Tienda que vendió', esc(tiendaNombre(tienda)))}
           ${fila('Número de factura', esc(fnum.trim().toUpperCase()))}
           ${fila('Fecha de la factura', fdate(ffecha))}
-          ${fila('Nombre en la factura', esc(fnom.trim()))}
+          ${fnom.trim() ? fila('Nombre en la factura', esc(fnom.trim())) : ''}${digits(fced) ? fila('Cédula en la factura', esc(num(digits(fced)))) : ''}
           ${fila('Valor de la factura', money(valor), true)}
           ${fila('Puntos que gana', '+' + num(pts), true)}
         </div>`, async () => {
-        const r = await rpc('acumular', { p_cedula: ficha.cedula, p_tienda_id: tienda, p_valor: valor, p_factura_numero: fnum, p_factura_fecha: ffecha, p_factura_nombre: fnom });
+        const r = await rpc('acumular', { p_cedula: ficha.cedula, p_tienda_id: tienda, p_valor: valor, p_factura_numero: fnum, p_factura_fecha: ffecha, p_factura_nombre: fnom, p_factura_cedula: digits(fced) || null });
         const nombre = r.cliente.nombre, total = r.cliente.puntos, fac = fnum.trim().toUpperCase();
         const tipoCli = r.recurrente ? `<span class="pill navy">Cliente recurrente en ${esc(r.tienda)}</span>` : `<span class="pill" style="background:var(--coral);color:#fff">Cliente nuevo en ${esc(r.tienda)}</span>`;
         // Formulario en blanco: cliente, cédula y factura
-        ficha = null; valor = 0; fnum = ''; fnom = ''; tienda = null; ffecha = iso(new Date());
+        ficha = null; valor = 0; fnum = ''; fnom = ''; fced = ''; tienda = null; ffecha = iso(new Date());
         $('#sced').value = ''; $('#sres').innerHTML = '';
         $('#acc').innerHTML = `<div class="card okcard">${ic('check', 30, 2.6)}<div><div class="row wrap" style="gap:8px"><b style="font-size:18px">Compra registrada</b>${tipoCli}</div><div class="small">Factura ${esc(fac)} · +${num(r.puntos_ganados)} puntos para ${esc(nombre)} · Total: ${num(total)} pts</div><div class="small muted">El formulario quedó en blanco para la siguiente compra.</div></div></div>`;
         $('#sced').focus();
@@ -743,7 +781,7 @@ async function vClientes(box) {
       <span class="pill navy" style="padding:6px 14px">${num(c.puntos)} pts · ${c.sellos}/${config.sellos_meta || 8} sellos</span></div>
       <div class="row wrap"><button class="btn ghost sm" id="ed-cli">Editar datos</button><button class="btn ghost sm" id="rs-pin">Restablecer PIN</button></div>
       <div class="tbl-wrap"><table><thead><tr><th>Fecha factura</th><th>Movimiento</th><th>Valor</th><th>Puntos</th><th>Vence</th><th></th></tr></thead><tbody>
-      ${tx.map((t) => `<tr class="${t.anulada ? 'tag-anulada' : ''}"><td>${fdate(t.factura_fecha || t.fecha)}</td><td><b>${esc(t.tipo === 'redencion' ? (t.detalle || 'Redención') : t.tienda)}</b>${t.factura_numero ? `<div class="small muted">Factura ${esc(t.factura_numero)} · ${esc(t.factura_nombre || '')}</div>` : ''}${t.cliente_recurrente === true ? '<div class="small" style="font-weight:600">Cliente recurrente</div>' : t.cliente_recurrente === false ? '<div class="small" style="font-weight:600;color:var(--coral-t)">Cliente nuevo en la tienda</div>' : ''}${t.con_sello ? ' · sello' : ''}${t.registrada_en ? `<div class="small muted">en ${esc(t.registrada_en)}</div>` : ''}${t.ediciones ? `<div class="small muted">editada ${t.ediciones}×</div>` : ''}</td>
+      ${tx.map((t) => `<tr class="${t.anulada ? 'tag-anulada' : ''}"><td>${fdate(t.factura_fecha || t.fecha)}</td><td><b>${esc(t.tipo === 'redencion' ? (t.detalle || 'Redención') : t.tienda)}</b>${t.factura_numero ? `<div class="small muted">Factura ${esc(t.factura_numero)} · ${esc(t.factura_nombre || '')}${t.factura_cedula ? ' · C.C. ' + esc(num(t.factura_cedula)) : ''}</div>` : ''}${t.cliente_recurrente === true ? '<div class="small" style="font-weight:600">Cliente recurrente</div>' : t.cliente_recurrente === false ? '<div class="small" style="font-weight:600;color:var(--coral-t)">Cliente nuevo en la tienda</div>' : ''}${t.con_sello ? ' · sello' : ''}${t.registrada_en ? `<div class="small muted">en ${esc(t.registrada_en)}</div>` : ''}${t.ediciones ? `<div class="small muted">editada ${t.ediciones}×</div>` : ''}</td>
         <td>${t.valor_compra ? money(t.valor_compra) : '—'}</td><td style="font-weight:800;color:${t.puntos < 0 ? 'var(--coral-t)' : 'var(--teal-d)'}">${t.puntos > 0 ? '+' : ''}${num(t.puntos)}</td><td>${t.vence_en ? fdate(t.vence_en) : '—'}</td>
         <td style="white-space:nowrap;text-align:right">${t.tipo === 'acumulacion' && !t.anulada ? `<button class="btn ghost sm" data-ed="${t.id}">Editar</button> <button class="btn ghost sm" data-an="${t.id}">Anular</button>` : (t.anulada ? '<span class="small">Anulada</span>' : '')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin movimientos.</td></tr>'}
       </tbody></table></div>
