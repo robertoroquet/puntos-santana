@@ -988,14 +988,33 @@ async function vPremios(box) {
       <div class="field"><label for="p-p">Puntos *</label><input class="input" id="p-p" inputmode="numeric" value="${p.puntos ? num(p.puntos) : ''}"></div>
       <div class="field"><label for="p-s">Stock (vacío = sin límite)</label><input class="input" id="p-s" inputmode="numeric" value="${p.stock ?? ''}"></div></div>
     <div class="field"><label for="p-t">Tienda que lo entrega</label><select class="input" id="p-t"><option value="">—</option>${tiendas.map((t) => `<option ${p.tienda === t.nombre ? 'selected' : ''}>${esc(t.nombre)}</option>`).join('')}</select></div>
-    <div class="field"><label for="p-i">Enlace de la foto (opcional)</label><input class="input" id="p-i" type="url" value="${esc(p.imagen_url || '')}" placeholder="https://…"></div>`, async (dl) => {
-    const row = { nombre: $('#p-n', dl).value.trim(), descripcion: $('#p-d', dl).value.trim() || null, puntos: Number(digits($('#p-p', dl).value)), stock: $('#p-s', dl).value.trim() === '' ? null : Number(digits($('#p-s', dl).value)), tienda: $('#p-t', dl).value || null, imagen_url: $('#p-i', dl).value.trim() || null };
+    <div class="field"><label for="p-f">Foto del premio</label>
+      <div class="row" style="gap:14px;align-items:center"><div id="p-prev" style="width:96px;height:96px;border-radius:16px;background:#FFE7A8;overflow:hidden;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">${p.imagen_url ? `<img src="${esc(p.imagen_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : 'Sin foto'}</div>
+      <div class="stack" style="gap:6px;flex:1"><input class="input" id="p-f" type="file" accept="image/*" style="padding:10px;height:auto"><span class="small muted">JPG o PNG. Se ajusta sola al tamaño correcto.</span>${p.imagen_url ? '<label class="check small"><input type="checkbox" id="p-del">Quitar la foto actual</label>' : ''}</div></div></div>`, async (dl) => {
+    const row = { nombre: $('#p-n', dl).value.trim(), descripcion: $('#p-d', dl).value.trim() || null, puntos: Number(digits($('#p-p', dl).value)), stock: $('#p-s', dl).value.trim() === '' ? null : Number(digits($('#p-s', dl).value)), tienda: $('#p-t', dl).value || null, imagen_url: p.imagen_url || null };
+    const del = $('#p-del', dl); if (del && del.checked) row.imagen_url = null;
+    const file = $('#p-f', dl).files[0];
+    if (file) row.imagen_url = await subirFotoPremio(file);
     if (!row.nombre || !row.puntos) { toast('Escribe el nombre y los puntos.', true); return false; }
     const q = p.id ? sb.from('premios').update(row).eq('id', p.id) : sb.from('premios').insert(row);
     const { error: e } = await q; if (e) throw e; toast('Premio guardado.'); vPremios(box);
   });
-  $('#nuevo').onclick = () => form();
-  $$('[data-ed]').forEach((b) => b.onclick = () => form(data.find((x) => x.id === b.dataset.ed)));
+  const conVista = (fn) => () => { fn(); const f = document.querySelector('dialog #p-f'); if (f) f.onchange = () => { const x = f.files[0]; if (x) document.querySelector('dialog #p-prev').innerHTML = `<img src="${URL.createObjectURL(x)}" alt="" style="width:100%;height:100%;object-fit:cover">`; }; };
+  $('#nuevo').onclick = conVista(() => form());
+  $$('[data-ed]').forEach((b) => b.onclick = conVista(() => form(data.find((x) => x.id === b.dataset.ed))));
+}
+
+/* Sube la foto de un premio (reducida a máx. 900 px, JPG) y devuelve su enlace público */
+async function subirFotoPremio(file) {
+  const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error('No se pudo leer la imagen.')); i.src = URL.createObjectURL(file); });
+  const max = 900, k = Math.min(1, max / Math.max(img.width, img.height));
+  const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+  const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(img, 0, 0, cv.width, cv.height);
+  const blob = await new Promise((ok) => cv.toBlob(ok, 'image/jpeg', 0.85));
+  const path = `premio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  const { error } = await sb.storage.from('premios').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+  if (error) throw error;
+  return sb.storage.from('premios').getPublicUrl(path).data.publicUrl;
 }
 
 async function vCupones(box) {
