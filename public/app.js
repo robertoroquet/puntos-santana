@@ -535,10 +535,11 @@ function vAcumular(box) {
         </div>`, async () => {
         const r = await rpc('acumular', { p_cedula: ficha.cedula, p_tienda_id: tienda, p_valor: valor, p_factura_numero: fnum, p_factura_fecha: ffecha, p_factura_nombre: fnom });
         const nombre = r.cliente.nombre, total = r.cliente.puntos, fac = fnum.trim().toUpperCase();
+        const tipoCli = r.recurrente ? `<span class="pill navy">Cliente recurrente en ${esc(r.tienda)}</span>` : `<span class="pill" style="background:var(--coral);color:#fff">Cliente nuevo en ${esc(r.tienda)}</span>`;
         // Formulario en blanco: cliente, cédula y factura
         ficha = null; valor = 0; fnum = ''; fnom = ''; tienda = null; ffecha = iso(new Date());
         $('#sced').value = ''; $('#sres').innerHTML = '';
-        $('#acc').innerHTML = `<div class="card okcard">${ic('check', 30, 2.6)}<div><b style="font-size:18px">Compra registrada</b><div class="small">Factura ${esc(fac)} · +${num(r.puntos_ganados)} puntos para ${esc(nombre)} · Total: ${num(total)} pts</div><div class="small muted">El formulario quedó en blanco para la siguiente compra.</div></div></div>`;
+        $('#acc').innerHTML = `<div class="card okcard">${ic('check', 30, 2.6)}<div><div class="row wrap" style="gap:8px"><b style="font-size:18px">Compra registrada</b>${tipoCli}</div><div class="small">Factura ${esc(fac)} · +${num(r.puntos_ganados)} puntos para ${esc(nombre)} · Total: ${num(total)} pts</div><div class="small muted">El formulario quedó en blanco para la siguiente compra.</div></div></div>`;
         $('#sced').focus();
         toast(`+${num(r.puntos_ganados)} puntos para ${nombre}`);
       }, 'Sí, son correctos');
@@ -709,7 +710,7 @@ async function vClientes(box) {
       <span class="pill navy" style="padding:6px 14px">${num(c.puntos)} pts · ${c.sellos}/${config.sellos_meta || 8} sellos</span></div>
       <div class="row wrap"><button class="btn ghost sm" id="ed-cli">Editar datos</button><button class="btn ghost sm" id="rs-pin">Restablecer PIN</button></div>
       <div class="tbl-wrap"><table><thead><tr><th>Fecha factura</th><th>Movimiento</th><th>Valor</th><th>Puntos</th><th>Vence</th><th></th></tr></thead><tbody>
-      ${tx.map((t) => `<tr class="${t.anulada ? 'tag-anulada' : ''}"><td>${fdate(t.factura_fecha || t.fecha)}</td><td><b>${esc(t.tipo === 'redencion' ? (t.detalle || 'Redención') : t.tienda)}</b>${t.factura_numero ? `<div class="small muted">Factura ${esc(t.factura_numero)} · ${esc(t.factura_nombre || '')}</div>` : ''}${t.con_sello ? ' · sello' : ''}${t.registrada_en ? `<div class="small muted">en ${esc(t.registrada_en)}</div>` : ''}${t.ediciones ? `<div class="small muted">editada ${t.ediciones}×</div>` : ''}</td>
+      ${tx.map((t) => `<tr class="${t.anulada ? 'tag-anulada' : ''}"><td>${fdate(t.factura_fecha || t.fecha)}</td><td><b>${esc(t.tipo === 'redencion' ? (t.detalle || 'Redención') : t.tienda)}</b>${t.factura_numero ? `<div class="small muted">Factura ${esc(t.factura_numero)} · ${esc(t.factura_nombre || '')}</div>` : ''}${t.cliente_recurrente === true ? '<div class="small" style="font-weight:600">Cliente recurrente</div>' : t.cliente_recurrente === false ? '<div class="small" style="font-weight:600;color:var(--coral-t)">Cliente nuevo en la tienda</div>' : ''}${t.con_sello ? ' · sello' : ''}${t.registrada_en ? `<div class="small muted">en ${esc(t.registrada_en)}</div>` : ''}${t.ediciones ? `<div class="small muted">editada ${t.ediciones}×</div>` : ''}</td>
         <td>${t.valor_compra ? money(t.valor_compra) : '—'}</td><td style="font-weight:800;color:${t.puntos < 0 ? 'var(--coral-t)' : 'var(--teal-d)'}">${t.puntos > 0 ? '+' : ''}${num(t.puntos)}</td><td>${t.vence_en ? fdate(t.vence_en) : '—'}</td>
         <td style="white-space:nowrap;text-align:right">${t.tipo === 'acumulacion' && !t.anulada ? `<button class="btn ghost sm" data-ed="${t.id}">Editar</button> <button class="btn ghost sm" data-an="${t.id}">Anular</button>` : (t.anulada ? '<span class="small">Anulada</span>' : '')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin movimientos.</td></tr>'}
       </tbody></table></div>
@@ -803,8 +804,9 @@ async function vInforme(box) {
       ${K('Presupuesto de facturas', totMeta ? num(totMeta) : '—', 'var(--teal)', conMeta.length ? `${conMeta.length} de ${T.length} tiendas con meta` : 'Sin presupuesto cargado')}
       ${K('Cumplimiento general', pctG == null ? '—' : pctG + '%', color(pctG))}
       ${K('Puntos acumulados', num(T.reduce((a, t) => a + t.puntos, 0)), 'var(--sun)')}
-      ${K('Ventas registradas', money(T.reduce((a, t) => a + Number(t.ventas), 0)), 'var(--coral)')}
-      ${K('Clientes nuevos activos', num(d.nuevos), 'var(--yellow)')}
+      ${K('Clientes nuevos', num(T.reduce((a, t) => a + t.nuevos, 0)), 'var(--coral)', 'Primera compra en la tienda')}
+      ${K('Clientes recurrentes', num(T.reduce((a, t) => a + t.recurrentes, 0)), 'var(--navy)', 'Ya habían comprado en la tienda')}
+      ${K('Inscritos en la app', num(d.inscritos), 'var(--yellow)')}
     </div>
     <div class="cols">
       <section class="card stack"><h2 style="font-size:18px;font-weight:800">Facturas vs. presupuesto</h2>
@@ -818,27 +820,29 @@ async function vInforme(box) {
       </section>
     </div>
     <section class="card stack"><h2 style="font-size:18px;font-weight:800">Ranking de tiendas · ${titulo}</h2>
-      <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th style="text-align:right">Facturas</th><th style="text-align:right">Meta</th><th>Cumplimiento</th><th style="text-align:right">Puntos</th><th style="text-align:right">Ventas</th><th style="text-align:right">Clientes</th><th style="text-align:right">vs. mes anterior</th></tr></thead><tbody>
-      ${rank.map((t, i) => `<tr><td><b>${i + 1}</b></td><td><b>${esc(t.nombre)}</b>${t.man_facturas != null || t.man_puntos != null || t.man_ventas != null ? ' <span title="Incluye resultados cargados a mano" style="color:var(--teal-d)">✎</span>' : ''}${t.sellos ? `<div class="small muted">${num(t.sellos)} sellos</div>` : ''}</td><td style="text-align:right;font-weight:800">${num(t.facturas)}</td><td style="text-align:right">${t.meta ? num(t.meta) : '—'}</td>
+      <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th style="text-align:right">Facturas</th><th style="text-align:right">Meta</th><th>Cumplimiento</th><th style="text-align:right">Puntos</th><th style="text-align:right">Clientes nuevos</th><th style="text-align:right">Recurrentes</th><th style="text-align:right">vs. mes anterior</th></tr></thead><tbody>
+      ${rank.map((t, i) => `<tr><td><b>${i + 1}</b></td><td><b>${esc(t.nombre)}</b>${t.man_facturas != null || t.man_puntos != null || t.man_nuevos != null || t.man_recurrentes != null ? ' <span title="Incluye resultados cargados a mano" style="color:var(--teal-d)">✎</span>' : ''}${t.sellos ? `<div class="small muted">${num(t.sellos)} sellos</div>` : ''}</td><td style="text-align:right;font-weight:800">${num(t.facturas)}</td><td style="text-align:right">${t.meta ? num(t.meta) : '—'}</td>
         <td style="min-width:170px"><div class="row" style="gap:8px"><div class="bar" style="flex:1;height:10px"><div style="width:${Math.min(100, t.pct || 0)}%;background:${color(t.pct)}"></div></div><b style="color:${color(t.pct)};min-width:44px;text-align:right">${t.pct == null ? '—' : t.pct + '%'}</b></div><span class="small" style="color:${color(t.pct)}">${estado(t.pct)}</span></td>
-        <td style="text-align:right">${num(t.puntos)}</td><td style="text-align:right">${money(t.ventas)}</td><td style="text-align:right">${num(t.clientes)}</td><td style="text-align:right">${delta(t)}</td></tr>`).join('')}
+        <td style="text-align:right">${num(t.puntos)}</td><td style="text-align:right;font-weight:700;color:var(--coral-t)">${num(t.nuevos)}</td><td style="text-align:right;font-weight:700">${num(t.recurrentes)}</td><td style="text-align:right">${delta(t)}</td></tr>`).join('')}
       </tbody></table></div>
     </section></div>`;
-  $('#i-x').onclick = () => csv([['Mes', 'Puesto', 'Tienda', 'Facturas', 'Meta facturas', 'Cumplimiento %', 'Puntos', 'Ventas', 'Clientes', 'Facturas mes anterior'], ...rank.map((t, i) => [titulo, i + 1, t.nombre, t.facturas, t.meta ?? '', t.pct ?? '', t.puntos, t.ventas, t.clientes, t.facturas_anterior])], `informe-tiendas-${informeMes.slice(0, 7)}.csv`);
+  $('#i-x').onclick = () => csv([['Mes', 'Puesto', 'Tienda', 'Facturas', 'Meta facturas', 'Cumplimiento %', 'Puntos', 'Clientes nuevos', 'Clientes recurrentes', 'Facturas mes anterior'], ...rank.map((t, i) => [titulo, i + 1, t.nombre, t.facturas, t.meta ?? '', t.pct ?? '', t.puntos, t.nuevos, t.recurrentes, t.facturas_anterior])], `informe-tiendas-${informeMes.slice(0, 7)}.csv`);
   $('#i-man').onclick = () => {
     const nf = (v) => v == null ? '' : num(v);
     dialog(`<h2 style="font-size:20px;font-weight:800">Resultados a mano · ${titulo}</h2>
       <p class="small muted" style="margin:0">Para meses anteriores a la app (por ejemplo octubre) o datos que no pasaron por la app. Se suman al informe; no cambian los puntos de los clientes. Deja vacío lo que no tengas.</p>
-      <div class="tbl-wrap" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Tienda</th><th>Facturas</th><th>Puntos</th><th>Ventas ($)</th></tr></thead><tbody>
+      <div class="tbl-wrap" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Tienda</th><th>Facturas</th><th>Puntos</th><th>Clientes nuevos</th><th>Recurrentes</th></tr></thead><tbody>
       ${T.map((t) => `<tr data-man="${t.id}"><td><b>${esc(t.nombre)}</b></td>
         <td><input class="input" aria-label="Facturas ${esc(t.nombre)}" data-k="facturas" inputmode="numeric" value="${nf(t.man_facturas)}" style="height:40px;min-width:90px"></td>
-        <td><input class="input" aria-label="Puntos ${esc(t.nombre)}" data-k="puntos" inputmode="numeric" value="${nf(t.man_puntos)}" style="height:40px;min-width:110px"></td>
-        <td><input class="input" aria-label="Ventas ${esc(t.nombre)}" data-k="ventas" inputmode="numeric" value="${nf(t.man_ventas)}" style="height:40px;min-width:130px"></td></tr>`).join('')}
+        <td><input class="input" aria-label="Puntos ${esc(t.nombre)}" data-k="puntos" inputmode="numeric" value="${nf(t.man_puntos)}" style="height:40px;min-width:90px"></td>
+        <td><input class="input" aria-label="Clientes nuevos ${esc(t.nombre)}" data-k="clientes_nuevos" inputmode="numeric" value="${nf(t.man_nuevos)}" style="height:40px;min-width:90px"></td>
+        <td><input class="input" aria-label="Clientes recurrentes ${esc(t.nombre)}" data-k="clientes_recurrentes" inputmode="numeric" value="${nf(t.man_recurrentes)}" style="height:40px;min-width:90px"></td></tr>`).join('')}
       </tbody></table></div>`, async (dl) => {
       const filas = {};
       dl.querySelectorAll('[data-man]').forEach((tr) => { const o = {}; tr.querySelectorAll('[data-k]').forEach((i) => { o[i.dataset.k] = i.value.replace(/\D/g, ''); }); filas[tr.dataset.man] = o; });
       await rpc('admin_guardar_resultados', { p_mes: informeMes, p_filas: filas }); toast('Resultados guardados.'); vInforme(box);
     });
+    const dlm = document.querySelector('dialog:last-of-type'); if (dlm) dlm.style.maxWidth = '820px';
     document.querySelectorAll('dialog [data-k]').forEach((i) => i.oninput = () => { const v = i.value.replace(/\D/g, ''); i.value = v ? Number(v).toLocaleString('es-CO') : ''; });
   };
   $('#i-meta').onclick = () => {
