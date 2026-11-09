@@ -1245,6 +1245,35 @@ async function vAjustes(box) {
     if (error) return toast(errText(error), true);
     config = Object.fromEntries(rows.map((r) => [r.clave, r.valor])); toast('Ajustes guardados.');
   };
+  box.insertAdjacentHTML('beforeend', `<div class="card stack" style="max-width:640px;margin-top:18px">
+    <div class="row between wrap" style="gap:10px"><div><b>Copias de seguridad</b><div class="small muted">Se hacen solas cada domingo a las 3:00 a.m. y se guardan 12 semanas. Cada archivo abre en Excel.</div></div>
+    <button class="btn ghost sm" id="bk-ya">Hacer copia ahora</button></div><div id="bk-lista" class="small muted">Cargando…</div></div>`);
+  const cargarCopias = async () => {
+    const st = sb.storage.from('respaldos');
+    const { data: fechas, error } = await st.list('', { limit: 100, sortBy: { column: 'name', order: 'desc' } });
+    if (error) { $('#bk-lista').textContent = errText(error); return; }
+    const dias = (fechas || []).filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f.name));
+    if (!dias.length) { $('#bk-lista').textContent = 'Todavía no hay copias.'; return; }
+    $('#bk-lista').innerHTML = dias.map((d, i) => `<details ${i ? '' : 'open'} style="margin:6px 0"><summary><b>${esc(d.name)}</b></summary><div class="row wrap" data-dia="${esc(d.name)}" style="gap:6px;margin-top:6px">Cargando…</div></details>`).join('');
+    for (const el of $('#bk-lista').querySelectorAll('[data-dia]')) {
+      const dia = el.dataset.dia; const { data: fs } = await st.list(dia, { limit: 50 });
+      el.innerHTML = (fs || []).map((f) => `<button class="btn ghost sm" data-f="${esc(dia + '/' + f.name)}">${esc(f.name.replace('.csv', ''))}</button>`).join('');
+    }
+    $('#bk-lista').onclick = async (e) => {
+      const b = e.target.closest('[data-f]'); if (!b) return;
+      const { data, error: er } = await st.createSignedUrl(b.dataset.f, 120, { download: b.dataset.f.replace('/', '_') });
+      if (er) return toast(errText(er), true);
+      location.href = data.signedUrl;
+    };
+  };
+  $('#bk-ya').onclick = async () => {
+    $('#bk-ya').disabled = true;
+    const { error } = await sb.rpc('admin_respaldo_ahora');
+    if (error) { $('#bk-ya').disabled = false; return toast(errText(error), true); }
+    toast('Copia en proceso; aparece en unos segundos.');
+    setTimeout(() => { $('#bk-ya').disabled = false; cargarCopias(); }, 8000);
+  };
+  cargarCopias();
 }
 
 /* ---------- notificaciones push ---------- */
