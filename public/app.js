@@ -155,7 +155,7 @@ function clientLogin() {
     const b = $('button', $('#f')); b.disabled = true; $('#err').textContent = '';
     try {
       const r = await rpc('cliente_ingresar', { p_cedula: digits($('#ced').value), p_pin: $('#pin').value });
-      setTok(r.token); route();
+      setTok(r.token); activarPush(false).catch(() => {}); route();
     } catch (er) { $('#err').textContent = errText(er); b.disabled = false; }
   };
 }
@@ -219,10 +219,13 @@ async function clientInicio() {
     </section>
     ${stampCard(d, 'cliente')}
     <div class="card row between wrap" style="gap:10px"><div><span class="small muted">Tu tienda favorita</span><div style="font-weight:800;font-size:16px">${esc(d.tienda_favorita || 'Sin elegir')}</div><span class="small muted">Elige también de qué tiendas quieres recibir promociones.</span></div><button class="btn ghost sm" id="fav">Mis tiendas</button></div>
+    ${tarjetaPush()}
     ${botonInstalar()}
     ${pend ? `<section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Premios por reclamar</h2>${pend}</section>` : ''}
     <section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Últimos movimientos</h2>${mov}</section>
   </div>${tabbar('inicio')}</div>`;
+  activarPush(true).catch(() => {});
+  const pb = $('#push-on'); if (pb) pb.onclick = async () => { pb.disabled = true; try { const r = await activarPush(false); if (r === 'ok') { toast('¡Notificaciones activadas!'); const c = $('#push-card'); if (c) c.remove(); } else { toast(r === 'denied' ? 'No se activaron: las bloqueaste en el navegador.' : 'No se pudieron activar en este celular.', true); pb.disabled = false; } } catch (e) { toast('No se pudieron activar las notificaciones.', true); pb.disabled = false; } };
   $('#fav').onclick = async () => {
     let pr; try { pr = await clientCall('cliente_inicio_prefs'); } catch (e) { return; }
     const promo = new Set(pr.promo || []);
@@ -397,7 +400,7 @@ function clientBar(f) {
       <div class="field"><label for="a-pin2">Repetir PIN *</label><input class="input pin" id="a-pin2" type="password" inputmode="numeric" maxlength="4"></div>
     </div>
     <fieldset class="promo-set"><legend>¿De qué tiendas quiere recibir promociones? <span class="muted">(puede elegir varias)</span></legend><div class="chipchks">${tiendas.map((t) => `<label class="chipchk"><input type="checkbox" name="a-promo" value="${t.id}"><span>${esc(t.nombre)}</span></label>`).join('')}</div></fieldset>
-    <label class="check"><input type="checkbox" id="a-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012).</span></label>
+    <label class="check"><input type="checkbox" id="a-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012) y acepta recibir notificaciones push y mensajes con promociones en la app.</span></label>
     <button class="btn coral" style="align-self:flex-start">Activar cuenta</button>
   </form>`;
   return `<div class="card client-bar">
@@ -459,7 +462,7 @@ function vNuevo(box) {
       <div class="field"><label for="n-fav">Tienda favorita *</label><select class="input" id="n-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
     </div>
     <fieldset class="promo-set"><legend>¿De qué tiendas quiere recibir promociones? <span class="muted">(puede elegir varias)</span></legend><div class="chipchks">${tiendas.map((t) => `<label class="chipchk"><input type="checkbox" name="n-promo" value="${t.id}"><span>${esc(t.nombre)}</span></label>`).join('')}</div></fieldset>
-    <label class="check"><input type="checkbox" id="n-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012).</span></label>
+    <label class="check"><input type="checkbox" id="n-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012) y acepta recibir notificaciones push y mensajes con promociones en la app.</span></label>
     <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
     <button class="btn coral" style="align-self:flex-start">Inscribir cliente</button>
   </form>`;
@@ -1120,6 +1123,31 @@ async function vAjustes(box) {
     if (error) return toast(errText(error), true);
     config = Object.fromEntries(rows.map((r) => [r.clave, r.valor])); toast('Ajustes guardados.');
   };
+}
+
+/* ---------- notificaciones push ---------- */
+const soportaPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+function b64aUint8(b64) { const p = '='.repeat((4 - b64.length % 4) % 4); const r = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...r].map((c) => c.charCodeAt(0))); }
+async function activarPush(silencioso) {
+  if (!soportaPush() || !tok()) return 'no-soportado';
+  if (esIOS() && !esStandalone()) return 'instalar-primero';
+  let perm = Notification.permission;
+  if (perm === 'default' && !silencioso) perm = await Notification.requestPermission();
+  if (perm !== 'granted') return perm;
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aUint8(CFG.vapidPublic) });
+  await rpc('cliente_guardar_push', { p_token: tok(), p_suscripcion: sub.toJSON() });
+  return 'ok';
+}
+function tarjetaPush() {
+  if (!soportaPush() && !esIOS()) return '';
+  if (soportaPush() && Notification.permission === 'granted') return '';
+  const iosSinInstalar = esIOS() && !esStandalone();
+  const negado = soportaPush() && Notification.permission === 'denied';
+  return `<div class="card row between wrap" id="push-card" style="gap:10px;border-color:var(--yellow);background:#FFFBEA">
+    <div style="flex:1;min-width:200px"><b>${negado ? 'Notificaciones bloqueadas' : 'Activa las notificaciones'}</b><div class="small muted">${iosSinInstalar ? 'En iPhone primero instala la app en tu pantalla de inicio y ábrela desde el ícono.' : negado ? 'Las bloqueaste en este celular. Actívalas en los ajustes del navegador para este sitio.' : 'Entérate de tus promociones, cupones y puntos por vencer.'}</div></div>
+    ${iosSinInstalar || negado ? '' : '<button class="btn coral sm" id="push-on">Activar</button>'}</div>`;
 }
 
 /* ---------- instalar la app en el celular ---------- */
