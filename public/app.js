@@ -44,7 +44,7 @@ const ERR = {
   YA_SOLICITADO: 'Ya tienes este regalo solicitado.',
   SOLICITUD_NO_DISPONIBLE: 'Esta solicitud ya fue entregada o cancelada.',
   NO_AUTORIZADO: 'No tienes permiso para esta acción.',
-  NO_ES_RECAUDADOR: 'Solo Pilatos o Derek pueden entregar premios.',
+  NO_ES_RECAUDADOR: 'Solo los puntos recaudadores (Pilatos, Derek y Restaurante) pueden entregar premios.',
   SOLO_ACUMULACIONES: 'Solo se pueden editar compras.',
   FACTURA_REQUERIDA: 'Escribe el número de la factura.',
   FACTURA_USADA: 'Esa factura ya se usó para un sello.',
@@ -55,7 +55,7 @@ const ERR = {
   FACTURA_YA_ACUMULADA: 'Esa factura ya fue registrada en esa tienda.',
   SELLO_HOY: 'Este cliente ya recibió su sello hoy (máximo 1 por día).',
   TARJETA_LLENA: 'La tarjeta ya está completa: entrega el regalo primero.',
-  SIN_ACTIVAR: 'Tu cuenta aún no está activa. Acércate a Pilatos o Derek con tu cédula para activarla y crear tu PIN.',
+  SIN_ACTIVAR: 'Tu cuenta aún no está activa. Acércate a Pilatos, Derek o el Restaurante con tu cédula para activarla y crear tu PIN.',
   YA_ACTIVO: 'Este cliente ya tiene su cuenta activa.',
   CELULAR_INVALIDO: 'Escribe un celular válido.',
   NACIMIENTO_INVALIDO: 'Revisa la fecha de nacimiento.',
@@ -148,7 +148,7 @@ function clientLogin() {
       <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
       <button class="btn coral block" style="height:56px;font-size:17px">Entrar</button>
       ${botonInstalar()}
-      <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos o Derek con tu cédula.</p>
+      <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos, Derek o el Restaurante con tu cédula.</p>
     </form>
   </div>`;
   $('#ced').focus();
@@ -222,7 +222,7 @@ async function clientInicio() {
   const pend = (d.solicitudes || []).map((s) => `
     <div class="pending stack" style="gap:8px">
       <div class="row between"><b>${s.tipo === 'sellos' ? 'Regalo de sellos' : esc(s.premio)}</b>${s.tipo === 'premio' ? `<span class="pill navy">${num(s.puntos)} pts</span>` : ''}</div>
-      <span class="small">Reclámalo en <b>Pilatos</b> o <b>Derek</b> con tu cédula y tu PIN.</span>
+      <span class="small">Reclámalo en <b>Pilatos</b>, <b>Derek</b> o el <b>Restaurante</b> con tu cédula y tu PIN.</span>
       <button class="btn ghost sm" data-cancel="${s.id}" style="align-self:flex-start">Cancelar solicitud</button>
     </div>`).join('');
   app.innerHTML = `
@@ -289,12 +289,12 @@ async function clientPremios() {
     <div class="row between"><h1 style="font-size:24px;font-weight:800">Premios</h1><span class="pill navy" style="font-size:13px;padding:6px 14px">${num(d.puntos)} pts</span></div>
     ${reservado ? `<p class="small muted" style="margin:0">Tienes ${num(reservado)} pts apartados en premios por reclamar.</p>` : ''}
     ${items}
-    <p class="small muted center" style="margin:0">Elige tu premio aquí y reclámalo en Pilatos o Derek con tu cédula y PIN.</p>
+    <p class="small muted center" style="margin:0">Elige tu premio aquí y reclámalo en Pilatos, Derek o el Restaurante con tu cédula y PIN.</p>
   </div>${tabbar('premios')}</div>`;
   $$('[data-quiero]').forEach((b) => b.onclick = async () => {
-    if (!confirm(`¿Quieres redimir "${b.dataset.nombre}"? Lo reclamas en Pilatos o Derek.`)) return;
+    if (!confirm(`¿Quieres redimir "${b.dataset.nombre}"? Lo reclamas en Pilatos, Derek o el Restaurante.`)) return;
     b.disabled = true;
-    try { await clientCall('cliente_solicitar', { p_premio: b.dataset.quiero }); toast('¡Listo! Reclámalo en Pilatos o Derek.'); location.hash = '#/'; }
+    try { await clientCall('cliente_solicitar', { p_premio: b.dataset.quiero }); toast('¡Listo! Reclámalo en Pilatos, Derek o el Restaurante.'); location.hash = '#/'; }
     catch (e) { toast(errText(e), true); b.disabled = false; }
   });
 }
@@ -367,7 +367,7 @@ function staffLogin() {
   app.innerHTML = `
   <div class="login-staff"><form class="card" id="f" novalidate>
     <div class="brand" style="color:var(--navy)"><img src="${LOGO}" alt=""><div><b>PUNTOS <span style="color:var(--coral)">SANTANA</span></b><small class="muted">Acceso del personal</small></div></div>
-    <div class="field"><label for="u">Usuario</label><input class="input" id="u" autocomplete="username" autocapitalize="none" placeholder="admin, pilatos o derek" required></div>
+    <div class="field"><label for="u">Usuario</label><input class="input" id="u" autocomplete="username" autocapitalize="none" placeholder="admin, pilatos, derek o restaurante" required></div>
     <div class="field"><label for="p">Contraseña</label><input class="input" id="p" type="password" autocomplete="current-password" required></div>
     <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
     <button class="btn coral block">Entrar</button>
