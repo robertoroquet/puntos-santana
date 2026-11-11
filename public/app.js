@@ -579,7 +579,9 @@ function vNuevo(box) {
     e.preventDefault();
     const err = $('#err'); err.textContent = '';
     const v = (id) => $('#' + id).value.trim();
-    if (!digits(v('n-ced')) || !v('n-nom') || digits(v('n-cel')).length < 7) { err.textContent = 'Completa cédula, nombre y celular.'; return; }
+    if (!/^\d{5,12}$/.test(v('n-ced').replace(/[.\s-]/g, ''))) { err.textContent = 'En Cédula escribe solo el número del documento (5 a 12 dígitos, sin letras).'; $('#n-ced').focus(); return; }
+    if (!v('n-nom')) { err.textContent = 'Escribe el nombre completo.'; $('#n-nom').focus(); return; }
+    if (digits(v('n-cel')).length < 7) { err.textContent = 'Revisa el celular: debe tener al menos 7 números.'; $('#n-cel').focus(); return; }
     if (!/^\d{4}$/.test(v('n-pin'))) { err.textContent = ERR.PIN_INVALIDO; return; }
     if (v('n-pin') !== v('n-pin2')) { err.textContent = 'Los dos PIN no coinciden.'; return; }
     if (!v('n-nac')) { err.textContent = 'Escribe la fecha de nacimiento: con ella le enviamos su promoción de cumpleaños.'; return; }
