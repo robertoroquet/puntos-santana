@@ -103,7 +103,7 @@ const SUN = '<svg class="sun" aria-hidden="true" viewBox="0 0 100 100"><circle c
 function route() {
   const h = location.hash.replace(/^#/, '') || '/';
   if (h.startsWith('/personal')) return staffRoute(h.split('/')[2] || '');
-  return clientRoute(h.split('/')[1] || '');
+  return clientRoute(h.split('/')[1] || '', h.split('/')[2] || '');
 }
 window.addEventListener('hashchange', route);
 
@@ -123,9 +123,10 @@ async function clientCall(fn, extra) {
   }
 }
 
-function clientRoute(tab) {
+function clientRoute(tab, arg) {
   document.title = 'Puntos Santana';
   if (!tok()) return clientLogin();
+  if (tab === 'canje' && arg) return clientCanje(arg);
   if (tab === 'premios') return clientPremios();
   if (tab === 'cupones') return clientCupones();
   if (tab === 'mensajes') return clientMensajes();
@@ -235,7 +236,7 @@ async function clientInicio() {
   const pend = (d.solicitudes || []).map((s) => `
     <div class="pending stack" style="gap:8px">
       <div class="row between"><b>${s.tipo === 'sellos' ? 'Regalo de sellos' : esc(s.premio)}</b>${s.tipo === 'premio' ? `<span class="pill navy">${num(s.puntos)} pts</span>` : ''}</div>
-      <span class="small">Reclámalo en <b>Pilatos</b>, <b>Derek</b> o el <b>Restaurante</b> con tu cédula y tu PIN.</span>
+      ${s.tipo === 'sellos' ? '<span class="small">Reclámalo en la caja del <b>Restaurante</b> con tu cédula y tu PIN.</span>' : `<a class="btn coral sm" href="#/canje/${s.id}" style="align-self:flex-start">Mostrar en la tienda</a>`}
       <button class="btn ghost sm" data-cancel="${s.id}" style="align-self:flex-start">Cancelar solicitud</button>
     </div>`).join('');
   app.innerHTML = `
@@ -304,14 +305,52 @@ async function clientPremios() {
     <div class="row between"><h1 style="font-size:24px;font-weight:800">Premios</h1><span class="pill navy" style="font-size:13px;padding:6px 14px">${num(d.puntos)} pts</span></div>
     ${reservado ? `<p class="small muted" style="margin:0">Tienes ${num(reservado)} pts apartados en premios por reclamar.</p>` : ''}
     ${items}
-    <p class="small muted center" style="margin:0">Elige tu premio aquí y reclámalo en Pilatos, Derek o el Restaurante con tu cédula y PIN.</p>
   </div>${tabbar('premios')}</div>`;
   $$('[data-quiero]').forEach((b) => b.onclick = async () => {
-    if (!confirm(`¿Quieres redimir "${b.dataset.nombre}"? Lo reclamas en Pilatos, Derek o el Restaurante.`)) return;
+    if (!confirm(`¿Quieres redimir "${b.dataset.nombre}"?`)) return;
     b.disabled = true;
-    try { await clientCall('cliente_solicitar', { p_premio: b.dataset.quiero }); toast('¡Listo! Reclámalo en Pilatos, Derek o el Restaurante.'); location.hash = '#/'; }
+    try { const r = await clientCall('cliente_solicitar', { p_premio: b.dataset.quiero }); cInicio = null; location.hash = '#/canje/' + r.id; }
     catch (e) { toast(errText(e), true); b.disabled = false; }
   });
+}
+
+/* ---- Pantalla para mostrar en la tienda al reclamar un premio ---- */
+async function clientCanje(id) {
+  app.innerHTML = `<div class="phone"><div class="phone-body"><div class="empty">Cargando…</div></div>${tabbar('premios')}</div>`;
+  let d; try { d = await clientCall('cliente_canje', { p_solicitud: id }); } catch (e) { if (tok()) toast(errText(e), true); return; }
+  if (!d) { location.hash = '#/premios'; return; }
+  const ok = d.estado === 'entregada';
+  const reloj = () => new Date().toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  app.innerHTML = `
+  <div class="phone"><div class="phone-body">
+    <div class="card stack" style="gap:14px;padding:0;overflow:hidden;border:3px solid ${ok ? '#1B6B3A' : 'var(--coral)'}">
+      <div style="background:${ok ? '#1B6B3A' : 'var(--coral)'};color:#fff;padding:14px 18px;text-align:center">
+        <div style="font-size:13px;font-weight:700;letter-spacing:1px">${ok ? 'PREMIO ENTREGADO' : 'MUESTRA ESTA PANTALLA EN LA TIENDA'}</div>
+        <div style="font-size:24px;font-weight:900">${esc(d.tienda || '')}</div></div>
+      ${d.imagen_url ? `<img src="${esc(d.imagen_url)}" alt="" style="width:100%;max-height:240px;object-fit:cover;display:block;margin-top:-14px">` : ''}
+      <div class="stack" style="gap:6px;padding:0 18px">
+        <b style="font-size:22px;line-height:1.2">${esc(d.premio)}</b>
+        <span class="small muted">${num(d.puntos)} pts · ${esc(d.cliente)} · C.C. ${esc(num(d.cedula))}</span>
+        <span class="pill ${ok ? '' : 'sun'}" style="align-self:flex-start;font-size:13px" id="cj-reloj">${ok ? 'Entregado el ' + fdate(d.entregada_en) + ' · ' + new Date(d.entregada_en).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }) : 'Hoy ' + fdate(new Date()) + ' · ' + reloj()}</span>
+      </div>
+      ${ok ? `<div style="margin:0 18px 18px;background:#E6F4EA;color:#1B6B3A;border-radius:14px;padding:14px;font-weight:700;text-align:center;font-size:18px">✓ Puntos descontados. ¡Disfrútalo!</div>`
+      : `<form id="cj-f" class="stack" style="gap:10px;margin:0 18px 18px" novalidate>
+          <div style="background:#FFF5F3;border-radius:14px;padding:12px;font-size:14px"><b>Asesor de la tienda:</b> pide al cliente que escriba su PIN aquí. Entrega el premio solo cuando esta pantalla se ponga <b style="color:#1B6B3A">verde</b>.</div>
+          <div class="field"><label for="cj-pin">PIN del cliente</label><input class="input pin" id="cj-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
+          <button class="btn coral block" style="height:56px">Confirmar entrega</button>
+        </form>`}
+    </div>
+    <a class="small center muted" href="#/">Volver al inicio</a>
+  </div>${tabbar('premios')}</div>`;
+  if (!ok) {
+    const t = setInterval(() => { const el = document.getElementById('cj-reloj'); if (!el) return clearInterval(t); el.textContent = 'Hoy ' + fdate(new Date()) + ' · ' + reloj(); }, 1000);
+    $('#cj-f').onsubmit = async (e) => {
+      e.preventDefault();
+      const b = $('button', $('#cj-f')); b.disabled = true;
+      try { await clientCall('cliente_confirmar_entrega', { p_solicitud: id, p_pin: $('#cj-pin').value }); cInicio = null; toast('¡Premio entregado!'); clientCanje(id); }
+      catch (er) { toast(errText(er), true); b.disabled = false; $('#cj-pin').value = ''; $('#cj-pin').focus(); }
+    };
+  }
 }
 
 async function clientCupones() {
