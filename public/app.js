@@ -321,12 +321,12 @@ async function clientCupones() {
   app.innerHTML = `
   <div class="phone"><div class="phone-body">
     <h1 style="font-size:24px;font-weight:800">Cupones</h1>
-    ${list.map((c, i) => `<div class="coupon"><div class="l" style="background:${colors[i % 4]}">${ic('ticket', 34, 2)}</div>
+    ${list.map((c, i) => `<div>${c.foto_url ? `<img src="${esc(c.foto_url)}" alt="" style="width:100%;max-height:300px;object-fit:cover;border-radius:18px 18px 0 0;display:block">` : ''}<div class="coupon" ${c.foto_url ? 'style="border-top-left-radius:0;border-top-right-radius:0;border-top:0"' : ''}><div class="l" style="background:${colors[i % 4]}">${ic('ticket', 34, 2)}</div>
       <div class="r"><b style="font-size:15px">${esc(c.titulo)}</b>
       ${c.descripcion ? `<span class="small muted">${esc(c.descripcion)}</span>` : ''}
       ${c.tienda ? `<span class="small">${esc(c.tienda)}</span>` : ''}
       ${c.valido_hasta ? `<span class="small muted">Válido hasta ${fdate(c.valido_hasta)}</span>` : ''}
-      ${c.codigo ? `<span class="code">${esc(c.codigo)}</span>` : ''}</div></div>`).join('') || '<div class="empty">No hay cupones activos por ahora.</div>'}
+      ${c.codigo ? `<span class="code">${esc(c.codigo)}</span>` : ''}</div></div></div>`).join('') || '<div class="empty">No hay cupones activos por ahora.</div>'}
   </div>${tabbar('cupones')}</div>`;
 }
 
@@ -1174,10 +1174,26 @@ async function vCupones(box) {
   box.innerHTML = `<div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Cupones</h1><button class="btn coral" id="nuevo">+ Crear cupón</button></div><section class="card" id="cl"><div class="empty">Cargando…</div></section>`;
   const { data, error } = await sb.from('cupones').select('*').order('creado_en', { ascending: false });
   if (error) { $('#cl').innerHTML = `<div class="empty">${errText(error)}</div>`; return; }
+  const mini = (c) => `<div style="width:56px;height:56px;border-radius:12px;background:#FFE7A8;overflow:hidden;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted)">${c.foto_url ? `<img src="${esc(c.foto_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : 'Sin foto'}</div>`;
   $('#cl').innerHTML = data.length ? `<div class="tbl-wrap"><table><thead><tr><th>Cupón</th><th>Tienda</th><th>Código</th><th>Válido hasta</th><th>Activo</th><th></th></tr></thead><tbody>
-    ${data.map((c) => `<tr><td><b>${esc(c.titulo)}</b>${c.descripcion ? `<div class="small muted">${esc(c.descripcion)}</div>` : ''}</td><td>${esc(c.tienda || 'Todas')}</td><td>${esc(c.codigo || '—')}</td><td>${c.valido_hasta ? fdate(c.valido_hasta) : 'Sin fecha'}</td>
-    <td><button class="switch" data-sw="${c.id}" aria-pressed="${c.activo}" aria-label="Activo"></button></td><td><button class="btn ghost sm" data-ed="${c.id}">Editar</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Aún no hay cupones.</div>';
+    ${data.map((c) => `<tr><td><div class="row" style="gap:10px;align-items:center">${mini(c)}<div><b>${esc(c.titulo)}</b>${c.descripcion ? `<div class="small muted">${esc(c.descripcion)}</div>` : ''}</div></div></td><td>${esc(c.tienda || 'Todas')}</td><td>${esc(c.codigo || '—')}</td><td>${c.valido_hasta ? fdate(c.valido_hasta) : 'Sin fecha'}</td>
+    <td><button class="switch" data-sw="${c.id}" aria-pressed="${c.activo}" aria-label="Activo"></button></td>
+    <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn coral sm" data-push="${c.id}">Enviar push</button><button class="btn ghost sm" data-ed="${c.id}">Editar</button></div></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Aún no hay cupones.</div>';
   $$('[data-sw]').forEach((b) => b.onclick = async () => { const on = b.getAttribute('aria-pressed') !== 'true'; const { error: e } = await sb.from('cupones').update({ activo: on }).eq('id', b.dataset.sw); if (e) return toast(errText(e), true); vCupones(box); });
+
+  const enviar = (c) => dialog(`<h2 style="font-size:20px;font-weight:800">Enviar cupón por notificación</h2>
+    <div class="row" style="gap:12px;align-items:center">${mini(c)}<div><b>${esc(c.titulo)}</b><div class="small muted">${esc(c.tienda || 'Todas las tiendas')}</div></div></div>
+    <div class="field"><label>¿A quién?</label>
+      <label class="check"><input type="radio" name="seg" value="todos" ${c.tienda ? '' : 'checked'}><span>Todos los clientes</span></label>
+      ${c.tienda ? `<label class="check"><input type="radio" name="seg" value="tienda" checked><span>Solo quienes quieren promociones de ${esc(c.tienda)} (o la tienen de favorita)</span></label>` : ''}</div>
+    <p class="small muted" style="margin:0">Les llega al celular${c.foto_url ? ' con la foto' : ''} y al tocarla abre la sección Cupones. También queda en Mensajes.</p>`, async (dl) => {
+    if (!c.activo) { toast('Activa el cupón antes de enviarlo.', true); return false; }
+    const seg = dl.querySelector('input[name="seg"]:checked').value;
+    const r = await rpc('admin_enviar_cupon', { p_cupon: c.id, p_segmento: seg });
+    toast(`Cupón enviado a ${num(r.destinatarios)} clientes.`);
+  }, 'Enviar');
+  $$('[data-push]').forEach((b) => b.onclick = () => enviar(data.find((x) => x.id === b.dataset.push)));
+
   const form = (c = {}) => dialog(`<h2 style="font-size:20px;font-weight:800">${c.id ? 'Editar cupón' : 'Crear cupón'}</h2>
     <div class="field"><label for="c-t">Título *</label><input class="input" id="c-t" value="${esc(c.titulo || '')}" placeholder="Ej.: 2x1 en helados"></div>
     <div class="field"><label for="c-d">Descripción / condiciones</label><input class="input" id="c-d" value="${esc(c.descripcion || '')}"></div>
@@ -1185,18 +1201,25 @@ async function vCupones(box) {
       <div class="field"><label for="c-ti">Tienda</label><select class="input" id="c-ti"><option value="">Todas</option>${tiendas.map((t) => `<option ${c.tienda === t.nombre ? 'selected' : ''}>${esc(t.nombre)}</option>`).join('')}</select></div>
       <div class="field"><label for="c-c">Código</label><input class="input" id="c-c" value="${esc(c.codigo || '')}"></div>
       <div class="field"><label for="c-v">Válido hasta</label><input class="input" id="c-v" type="date" value="${esc(c.valido_hasta || '')}"></div></div>
-    ${c.id ? '' : '<label class="check"><input type="checkbox" id="c-msg" checked><span>Avisar a todos los clientes con un mensaje</span></label>'}`, async (dl) => {
-    const row = { titulo: $('#c-t', dl).value.trim(), descripcion: $('#c-d', dl).value.trim() || null, tienda: $('#c-ti', dl).value || null, codigo: $('#c-c', dl).value.trim().toUpperCase() || null, valido_hasta: $('#c-v', dl).value || null };
+    <div class="field"><label for="c-f">Foto del cupón</label>
+      <div class="row" style="gap:14px;align-items:center"><div id="c-prev" style="width:96px;height:96px;border-radius:16px;background:#FFE7A8;overflow:hidden;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">${c.foto_url ? `<img src="${esc(c.foto_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : 'Sin foto'}</div>
+      <div class="stack" style="gap:6px;flex:1"><input class="input" id="c-f" type="file" accept="image/*" style="padding:10px;height:auto"><span class="small muted">JPG o PNG. Se ajusta sola al tamaño correcto.</span>${c.foto_url ? '<label class="check small"><input type="checkbox" id="c-del">Quitar la foto actual</label>' : ''}</div></div></div>
+    ${c.id ? '' : '<label class="check"><input type="checkbox" id="c-msg" checked><span>Enviarlo ya por notificación push a todos los clientes</span></label>'}`, async (dl) => {
+    const row = { titulo: $('#c-t', dl).value.trim(), descripcion: $('#c-d', dl).value.trim() || null, tienda: $('#c-ti', dl).value || null, codigo: $('#c-c', dl).value.trim().toUpperCase() || null, valido_hasta: $('#c-v', dl).value || null, foto_url: c.foto_url || null };
     if (!row.titulo) { toast('Escribe el título.', true); return false; }
-    const { error: e } = c.id ? await sb.from('cupones').update(row).eq('id', c.id) : await sb.from('cupones').insert(row);
+    const del = $('#c-del', dl); if (del && del.checked) row.foto_url = null;
+    const file = $('#c-f', dl).files[0];
+    if (file) row.foto_url = await subirFotoPremio(file);
+    const { data: g, error: e } = c.id ? await sb.from('cupones').update(row).eq('id', c.id).select().single() : await sb.from('cupones').insert(row).select().single();
     if (e) throw e;
     const m = $('#c-msg', dl);
-    if (m && m.checked) { const r = await rpc('admin_enviar_mensaje', { p_titulo: 'Tienes un cupón nuevo', p_cuerpo: row.titulo + (row.tienda ? ' en ' + row.tienda : '') + '. Míralo en la sección Cupones.', p_segmento: 'todos', p_tienda: null }); toast(`Cupón publicado y avisado a ${num(r.destinatarios)} clientes.`); }
+    if (m && m.checked) { const r = await rpc('admin_enviar_cupon', { p_cupon: g.id, p_segmento: 'todos' }); toast(`Cupón publicado y enviado a ${num(r.destinatarios)} clientes.`); }
     else toast('Cupón guardado.');
     vCupones(box);
   });
-  $('#nuevo').onclick = () => form();
-  $$('[data-ed]').forEach((b) => b.onclick = () => form(data.find((x) => x.id === b.dataset.ed)));
+  const abrir = (c) => { form(c); const f = document.getElementById('c-f'); if (f) f.onchange = () => { const pv = document.getElementById('c-prev'); if (pv && f.files[0]) pv.innerHTML = `<img src="${URL.createObjectURL(f.files[0])}" alt="" style="width:100%;height:100%;object-fit:cover">`; }; };
+  $('#nuevo').onclick = () => abrir();
+  $$('[data-ed]').forEach((b) => b.onclick = () => abrir(data.find((x) => x.id === b.dataset.ed)));
 }
 
 async function vMensajes(box) {
