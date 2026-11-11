@@ -352,7 +352,7 @@ let perfil = null, tiendas = [], config = {}, ficha = null;
 // Cierra la sesión del personal aunque el servidor ya la haya invalidado (p. ej. tras cambiar la contraseña)
 async function cerrarSesion() {
   try { await sb.auth.signOut({ scope: 'local' }); } catch {}
-  try { Object.keys(localStorage).filter((k) => k.startsWith('sb-')).forEach((k) => localStorage.removeItem(k)); } catch {}
+  try { Object.keys(localStorage).filter((k) => k.startsWith('ps_staff') || k.startsWith('sb-')).forEach((k) => localStorage.removeItem(k)); } catch {}
   perfil = null; ficha = null;
 }
 async function loadStaff() {
