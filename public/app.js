@@ -52,7 +52,7 @@ const ERR = {
   FECHA_FUTURA: 'La fecha de la factura no puede ser futura.',
   FACTURA_VENCIDA: 'Esa factura tiene más de un año: sus puntos ya estarían vencidos.',
   NOMBRE_NO_COINCIDE: 'La factura no está a nombre de este cliente. Solo el titular puede acumular sus facturas.',
-  FACTURA_YA_ACUMULADA: 'Esa factura ya fue registrada en esa tienda.',
+  FACTURA_YA_ACUMULADA: 'Esta factura ya fue registrada antes. No se sumaron puntos.',
   SELLO_HOY: 'Este cliente ya recibió su sello hoy (máximo 1 por día).',
   TARJETA_LLENA: 'La tarjeta ya está completa: entrega el regalo primero.',
   SIN_ACTIVAR: 'Tu cuenta aún no está activa. Acércate a Pilatos, Derek o el Restaurante con tu cédula para activarla y crear tu PIN.',
@@ -377,12 +377,12 @@ async function staffRoute(view) {
   if (p.rol === 'admin' && !(await adminVerificado())) return adminSegundoPaso();
   const isAdmin = p.rol === 'admin';
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
-  const adminOnly = ['dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
+  const adminOnly = ['alertas', 'dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
   staffShell(view);
   const box = $('#content');
-  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes };
-  (views[view] || vAcumular)(box);
+  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas };
+  Promise.resolve((views[view] || vAcumular)(box)).catch(() => {}).finally(() => { if (isAdmin) contarAlertas(); });
 }
 
 /* ---- Doble verificación del administrador (código de app autenticadora) ---- */
@@ -459,7 +459,7 @@ function staffShell(view) {
   const isAdmin = perfil.rol === 'admin';
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
-    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('informe', 'chart', 'Informe mensual')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
+    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('informe', 'chart', 'Informe mensual')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
     : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
@@ -1334,6 +1334,56 @@ async function vAjustes(box) {
       toast('Contraseña cambiada.');
     };
   });
+}
+
+
+/* ---- Alertas de facturas repetidas (solo administrador) ---- */
+async function contarAlertas() {
+  try {
+    const { count } = await sb.from('alertas').select('id', { count: 'exact', head: true }).eq('revisada', false);
+    const b = document.getElementById('al-badge'); if (!b) return;
+    if (count) { b.textContent = count; b.style.display = 'inline-block'; } else b.style.display = 'none';
+    const c = document.getElementById('content');
+    if (count && c && !location.hash.includes('alertas') && !document.getElementById('al-banner')) c.insertAdjacentHTML('afterbegin', `<a id="al-banner" href="#/personal/alertas" class="card row between wrap" style="border-color:var(--coral);background:#FFF5F3;text-decoration:none;color:inherit;margin-bottom:14px;gap:10px"><b style="color:var(--coral-t)">⚠ ${count === 1 ? 'Hay 1 factura para revisar' : 'Hay ' + count + ' facturas para revisar'}</b><span class="btn coral sm">Revisar</span></a>`);
+  } catch {}
+}
+async function activarAlertasPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'no-soportado';
+  if (esIOS() && !esStandalone()) return 'instalar-primero';
+  const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+  if (perm !== 'granted') return perm;
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aUint8(CFG.vapidPublic) });
+  await rpc('admin_guardar_push', { p_suscripcion: sub.toJSON() });
+  return 'ok';
+}
+async function vAlertas(box) {
+  box.innerHTML = `<div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Alertas</h1><button class="btn ghost sm" id="al-push">Recibir alertas en este dispositivo</button></div>
+  <p class="muted" style="margin:0">Cuando alguien intenta registrar una factura que ya estaba registrada (mismo número en la misma tienda, o mismo número, valor y cliente), la app no suma puntos y te avisa aquí. Solo el administrador ve estas alertas.</p>
+  <div id="al-list" class="stack" style="margin-top:14px"><div class="empty">Cargando…</div></div>`;
+  $('#al-push').onclick = async () => {
+    const b = $('#al-push'); b.disabled = true;
+    try {
+      const r = await activarAlertasPush();
+      if (r === 'ok') { toast('Listo: las alertas te llegarán a este dispositivo.'); b.textContent = 'Alertas activadas en este dispositivo'; return; }
+      toast(r === 'instalar-primero' ? 'En iPhone primero instala la app en la pantalla de inicio y ábrela desde el ícono.' : r === 'denied' ? 'Las notificaciones están bloqueadas en este navegador.' : 'Este navegador no permite notificaciones.', true);
+    } catch (e) { toast(errText(e), true); }
+    b.disabled = false;
+  };
+  let list; try { list = await rpc('admin_alertas'); } catch (e) { $('#al-list').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+  const hora = (d) => new Date(d).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
+  $('#al-list').innerHTML = list.map((a) => `<div class="card stack" style="gap:10px;${a.revisada ? 'opacity:.6' : 'border-color:var(--coral);background:#FFF5F3'}">
+    <div class="row between wrap" style="gap:8px"><b style="font-size:17px">${a.revisada ? 'Revisada' : 'Revisar factura'} ${esc(a.factura)}</b>
+      <span class="pill ${a.revisada ? '' : 'sun'}">${fdate(a.creada_en)} · ${hora(a.creada_en)}</span></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">
+      <div class="stack" style="gap:2px"><span class="small muted">Cliente</span><b>${esc(a.cliente)}</b><span class="small">C.C. ${esc(num(a.cedula))}</span></div>
+      <div class="stack" style="gap:2px"><span class="small muted">Intento repetido</span><b>${money(a.valor)} en ${esc(a.tienda || '—')}</b><span class="small">Por: ${esc(a.intento_por)}</span></div>
+      <div class="stack" style="gap:2px"><span class="small muted">Registro original</span><b>${money(a.original_valor)} en ${esc(a.original_tienda || '—')}</b><span class="small">${a.original_fecha ? fdate(a.original_fecha) + ' · ' + hora(a.original_fecha) : '—'} · Por: ${esc(a.original_por)} · +${num(a.original_puntos)} pts</span></div>
+    </div>
+    ${a.revisada ? '' : `<button class="btn coral sm" style="align-self:flex-start" data-rev="${a.id}">Marcar como revisada</button>`}
+  </div>`).join('') || '<div class="card empty">No hay alertas. Todo en orden.</div>';
+  $$('[data-rev]').forEach((b) => b.onclick = async () => { b.disabled = true; try { await rpc('admin_revisar_alerta', { p_alerta: b.dataset.rev }); toast('Alerta marcada como revisada.'); contarAlertas(); vAlertas(box); } catch (e) { toast(errText(e), true); b.disabled = false; } });
 }
 
 /* ---------- notificaciones push ---------- */
