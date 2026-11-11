@@ -349,6 +349,12 @@ async function clientMensajes() {
    ===================================================== */
 let perfil = null, tiendas = [], config = {}, ficha = null;
 
+// Cierra la sesión del personal aunque el servidor ya la haya invalidado (p. ej. tras cambiar la contraseña)
+async function cerrarSesion() {
+  try { await sb.auth.signOut({ scope: 'local' }); } catch {}
+  try { Object.keys(localStorage).filter((k) => k.startsWith('sb-')).forEach((k) => localStorage.removeItem(k)); } catch {}
+  perfil = null; ficha = null;
+}
 async function loadStaff() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { perfil = null; return null; }
@@ -358,7 +364,7 @@ async function loadStaff() {
     sb.from('tiendas').select('*').order('orden'),
     sb.from('config').select('*')
   ]);
-  if (!p) { await sb.auth.signOut(); return null; }
+  if (!p) { await cerrarSesion(); return null; }
   perfil = p; tiendas = t || []; config = Object.fromEntries((c || []).map((r) => [r.clave, r.valor]));
   return perfil;
 }
@@ -402,7 +408,7 @@ async function adminSegundoPaso() {
   } else {
     for (const f of factores.filter((x) => x.status !== 'verified')) { try { await sb.auth.mfa.unenroll({ factorId: f.id }); } catch {} }
     const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Puntos Santana ' + Date.now() });
-    if (error) { app.innerHTML = `<div class="login-staff"><div class="card stack"><b>No se pudo iniciar la doble verificación.</b><span class="small muted">${esc(error.message)}</span><button class="btn ghost" id="mf-out">Cerrar sesión</button></div></div>`; $('#mf-out').onclick = async () => { await sb.auth.signOut(); perfil = null; route(); }; return; }
+    if (error) { app.innerHTML = `<div class="login-staff"><div class="card stack"><b>No se pudo iniciar la doble verificación.</b><span class="small muted">${esc(error.message)}</span><button class="btn ghost" id="mf-out">Cerrar sesión</button></div></div>`; $('#mf-out').onclick = async () => { await cerrarSesion(); perfil = null; route(); }; return; }
     factorId = data.id;
     app.innerHTML = marco(`<div class="stack" style="gap:10px">
       <b style="font-size:17px">Activa la doble verificación (una sola vez)</b>
@@ -415,7 +421,7 @@ async function adminSegundoPaso() {
       <details class="small"><summary style="cursor:pointer">¿No puedes escanear? Escribe esta clave</summary><code style="word-break:break-all;font-size:13px">${esc(data.totp.secret)}</code></details></div>`);
   }
   $('#mf-code').focus();
-  $('#mf-out').onclick = async () => { await sb.auth.signOut(); perfil = null; location.hash = '#/personal'; route(); };
+  $('#mf-out').onclick = async () => { await cerrarSesion(); perfil = null; location.hash = '#/personal'; route(); };
   $('#mf2').onsubmit = async (e) => {
     e.preventDefault();
     const code = digits($('#mf-code').value), b = $('button', $('#mf2'));
@@ -465,7 +471,7 @@ function staffShell(view) {
     </header>
     <div class="staff-main">${side}<main class="content" id="content"></main></div>
   </div>`;
-  $('#logout').onclick = async () => { await sb.auth.signOut(); perfil = null; ficha = null; location.hash = '#/personal'; route(); };
+  $('#logout').onclick = async () => { await cerrarSesion(); perfil = null; ficha = null; location.hash = '#/personal'; route(); };
 }
 
 /* ---- buscador de cliente compartido ---- */
