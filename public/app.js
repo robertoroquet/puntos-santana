@@ -1274,6 +1274,35 @@ async function vAjustes(box) {
     setTimeout(() => { $('#bk-ya').disabled = false; cargarCopias(); }, 8000);
   };
   cargarCopias();
+
+  // Contraseñas del personal
+  const { data: equipo } = await sb.from('perfiles').select('user_id,nombre,rol').order('rol');
+  box.insertAdjacentHTML('beforeend', `<div class="card stack" style="max-width:640px;margin-top:18px">
+    <div><b>Contraseñas del personal</b><div class="small muted">Mínimo 8 caracteres. Mezcla letras y números; no uses cédulas ni fechas.</div></div>
+    ${(equipo || []).map((u) => `<form class="stack" data-u="${esc(u.user_id)}" novalidate style="border-top:1px solid #eee;padding-top:12px;gap:8px">
+      <b>${esc(u.nombre)}</b>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
+        <input class="input" type="password" autocomplete="new-password" placeholder="Contraseña nueva" name="c1">
+        <input class="input" type="password" autocomplete="new-password" placeholder="Repítela" name="c2"></div>
+      <label class="small row" style="gap:6px"><input type="checkbox" name="ver"> Mostrar</label>
+      <button class="btn coral sm" style="align-self:flex-start">Cambiar contraseña</button></form>`).join('')}</div>`);
+  box.querySelectorAll('form[data-u]').forEach((f) => {
+    f.ver.onchange = () => { f.c1.type = f.c2.type = f.ver.checked ? 'text' : 'password'; };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const c = f.c1.value;
+      if (c.length < 8) return toast('La contraseña debe tener mínimo 8 caracteres.', true);
+      if (c !== f.c2.value) return toast('Las dos contraseñas no coinciden.', true);
+      const btn = f.querySelector('button'); btn.disabled = true;
+      const { data, error } = await sb.functions.invoke('cambiar-clave', { body: { usuario_id: f.dataset.u, clave: c } });
+      btn.disabled = false;
+      let msg = data && data.error;
+      if (error) { try { msg = (await error.context.json()).error; } catch { msg = 'No se pudo cambiar. Intenta de nuevo.'; } }
+      if (msg) return toast(msg === 'NO_AUTORIZADO' ? 'Solo el administrador puede cambiar contraseñas.' : msg, true);
+      f.reset(); f.c1.type = f.c2.type = 'password';
+      toast('Contraseña cambiada.');
+    };
+  });
 }
 
 /* ---------- notificaciones push ---------- */
