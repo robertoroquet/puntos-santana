@@ -57,6 +57,9 @@ const ERR = {
   SIN_FECHA_NACIMIENTO: 'El cliente no tiene fecha de nacimiento registrada.',
   NO_ES_SU_MES: 'Este no es el mes de cumpleaños del cliente.',
   HELADO_YA_ENTREGADO: 'Este cliente ya recibió su helado de cumpleaños este año.',
+  SIN_CLAVE_UNICA: 'El cliente aún no ha generado su clave única. Pídele que toque "Generar clave única" en su celular.',
+  CLAVE_UNICA_INCORRECTA: 'Clave única incorrecta. Revísala con el cliente.',
+  CLAVE_UNICA_ANULADA: 'Demasiados intentos: la clave se anuló. El cliente debe generar una nueva.',
   CLAVE_REDENCION_INCORRECTA: 'Clave de redención incorrecta.',
   CLAVE_NO_CONFIGURADA: 'Este punto aún no tiene clave de redención. Pídela al administrador.',
   SOLICITUD_VENCIDA: 'Esta solicitud venció: pasaron las 24 horas.',
@@ -365,9 +368,11 @@ async function clientCanje(id) {
           <div class="small" style="font-weight:700">Tiempo para reclamarlo</div>
           <div style="font-size:44px;font-weight:900;color:var(--coral-t);font-variant-numeric:tabular-nums;letter-spacing:1px" data-hasta="${esc(d.expira_en)}">${restante(d.expira_en)}</div>
           <div class="small muted">Vence ${fdate(d.expira_en)} a las ${new Date(d.expira_en).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</div></div>
-        <p class="small" style="margin:0 18px">Ve a <b>${esc(d.donde)}</b> con tu cédula. El recaudador verá tu solicitud y la confirmará con su clave. Tus puntos se descuentan al recibir el premio.</p>
+        <p class="small" style="margin:0 18px">Ve a <b>${esc(d.donde)}</b> con tu cédula. Frente al cajero, toca el botón y dale la clave única. Tus puntos se descuentan al recibir el premio.</p>
+        <div id="cj-cod" style="margin:0 18px"></div>
+        <button class="btn coral block" id="cj-gen" style="margin:0 18px;width:auto;height:56px">${d.con_clave ? 'Generar una clave nueva' : 'Generar clave única para el cajero'}</button>
         <button class="btn ghost sm" id="cj-cancel" style="margin:0 18px 18px;align-self:flex-start">Cancelar solicitud</button>`
-      : est === 'entregada' ? `<div style="margin:0 18px 18px;background:#E6F4EA;color:#1B6B3A;border-radius:14px;padding:14px;font-weight:700;text-align:center">✓ Entregado el ${fdate(d.entregada_en)} · ${new Date(d.entregada_en).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}. ¡Disfrútalo!</div>`
+      : est === 'entregada' ? `<div style="margin:0 18px 18px;background:#E6F4EA;color:#1B6B3A;border-radius:14px;padding:14px;font-weight:700;text-align:center">✓ ¡Disfrútalo!<div class="small" style="font-weight:600;margin-top:4px">Entregado el ${fdate(d.entregada_en)} a las ${new Date(d.entregada_en).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</div></div>`
       : `<div style="margin:0 18px 18px" class="small muted">${est === 'vencida' ? 'Pasaron las 24 horas sin reclamarlo. Tus puntos siguen en tu cuenta; puedes volver a redimirlo cuando quieras.' : 'Cancelaste esta solicitud. Tus puntos siguen en tu cuenta.'}</div>`}
     </div>
     <a class="small center muted" href="#/">Volver al inicio</a>
@@ -375,7 +380,21 @@ async function clientCanje(id) {
   if (est === 'pendiente') {
     arrancarRelojes();
     $('#cj-cancel').onclick = async () => { if (!confirm('¿Cancelar esta solicitud?')) return; try { await clientCall('cliente_cancelar', { p_solicitud: id }); cInicio = null; clientCanje(id); } catch (e) { toast(errText(e), true); } };
-    const vigila = setInterval(async () => { if (!location.hash.includes(id)) return clearInterval(vigila); try { const n = await clientCall('cliente_canje', { p_solicitud: id }); if (n && n.estado !== 'pendiente') { clearInterval(vigila); cInicio = null; clientCanje(id); } } catch {} }, 15000);
+    const KEY = 'ps_cod_' + id;
+    const pintar = (cod) => { $('#cj-cod').innerHTML = cod ? `<div style="text-align:center;border:3px dashed var(--coral);border-radius:16px;padding:12px;background:#fff">
+        <div class="small" style="font-weight:700">Clave única para el cajero</div>
+        <div style="font-size:46px;font-weight:900;letter-spacing:6px;color:var(--navy);font-variant-numeric:tabular-nums">${cod.slice(0, 3)} ${cod.slice(3)}</div>
+        <div class="small muted">Dásela solo al cajero. Si generas otra, esta deja de servir.</div></div>` : ''; };
+    let guardado = null; try { guardado = sessionStorage.getItem(KEY); } catch {}
+    if (d.con_clave && guardado) pintar(guardado);
+    $('#cj-gen').onclick = async () => {
+      if (d.con_clave && !confirm('Se generará una clave nueva y la anterior dejará de servir. ¿Continuar?')) return;
+      const b = $('#cj-gen'); b.disabled = true;
+      try { const r = await clientCall('cliente_generar_codigo', { p_solicitud: id }); try { sessionStorage.setItem(KEY, r.codigo); } catch {} d.con_clave = true; pintar(r.codigo); b.textContent = 'Generar una clave nueva'; }
+      catch (e) { toast(errText(e), true); }
+      b.disabled = false;
+    };
+    const vigila = setInterval(async () => { if (!location.hash.includes(id)) return clearInterval(vigila); try { const n = await clientCall('cliente_canje', { p_solicitud: id }); if (n && n.estado !== 'pendiente') { clearInterval(vigila); try { sessionStorage.removeItem(KEY); } catch {} cInicio = null; clientCanje(id); } else if (n && !n.con_clave && d.con_clave) { d.con_clave = false; pintar(null); $('#cj-gen').textContent = 'Generar clave única para el cajero'; toast('Tu clave se anuló. Genera una nueva.', true); } } catch {} }, 4000);
   }
 }
 
@@ -795,7 +814,7 @@ function vSellos(box) {
 function vRedimir(box) {
   const miTienda = tiendaNombre(perfil.tienda_id);
   box.innerHTML = `<div class="row between wrap" style="gap:10px"><h1 style="font-size:28px;font-weight:800">Entregar premio</h1><button class="btn ghost sm" id="rd-act">Actualizar</button></div>
-  <p class="muted" style="margin:0">Aquí aparecen los premios que los clientes redimieron desde su celular${perfil.rol === 'admin' ? '' : miTienda === 'RESTAURANTE' ? ' (comida del Restaurante y Punto Dulce)' : ' (prendas y premios de las tiendas)'}. Tienen 24 horas para reclamarlos. Verifica la cédula física, entrega el premio y confírmalo con la clave de redención.</p>
+  <p class="muted" style="margin:0">Aquí aparecen los premios que los clientes redimieron desde su celular${perfil.rol === 'admin' ? '' : miTienda === 'RESTAURANTE' ? ' (comida del Restaurante y Punto Dulce)' : ' (prendas y premios de las tiendas)'}. Tienen 24 horas para reclamarlos. Cuando llegue el cliente, verifica su cédula física, pídele la <b>clave única</b> que genera en su celular y escríbela para entregar el premio.</p>
   <div id="rd-list" class="stack" style="margin-top:14px"><div class="empty">Cargando…</div></div>`;
   const tints = ['#FFE7A8', '#FCD9D2', '#D3EEF4', '#E8E2F5'];
   async function cargar() {
@@ -808,6 +827,7 @@ function vRedimir(box) {
         <span class="small muted">${esc(x.tienda || '')} · ${num(x.puntos)} pts</span>
         <div class="stack" style="gap:0"><b>${esc(x.cliente)}</b><span class="small">C.C. ${esc(num(x.cedula))}</span></div>
         <span class="pill sun" style="align-self:flex-start">Vence en <b data-hasta="${esc(x.expira_en)}" style="margin-left:4px">${restante(x.expira_en)}</b></span>
+        <span class="small" style="font-weight:700;color:${x.con_clave ? '#1B6B3A' : 'var(--muted)'}">${x.con_clave ? '✓ El cliente ya generó su clave única' : 'El cliente aún no genera su clave única'}</span>
         ${x.saldo < x.puntos ? `<span class="small" style="color:var(--coral-t)">El cliente ya no tiene puntos suficientes (${num(x.saldo)}).</span>` : ''}
         <button class="btn coral" data-ent="${x.id}" ${x.saldo < x.puntos ? 'disabled' : ''}>Entregar</button>
       </div>`).join('')}</div>` : '<div class="card empty">No hay premios por entregar en este momento.</div>';
@@ -817,9 +837,11 @@ function vRedimir(box) {
   const entregar = (x) => dialog(`<h2 style="font-size:20px;font-weight:800">Entregar premio</h2>
     <div class="card stack" style="gap:4px;background:var(--cream)"><b>${esc(x.premio)}</b><span class="small">${esc(x.cliente)} · C.C. ${esc(num(x.cedula))} · ${num(x.puntos)} pts</span></div>
     <label class="check"><input type="checkbox" id="ent-ced"><span>Verifiqué la <b>cédula física</b> del cliente</span></label>
-    ${perfil.rol === 'admin' ? '' : `<div class="field"><label for="ent-clave">Clave de redención</label><input class="input" id="ent-clave" type="password" autocomplete="off"></div>`}`, async (dl) => {
+    <div class="field"><label for="ent-clave">Clave única del cliente (6 números)</label><input class="input" id="ent-clave" inputmode="numeric" maxlength="7" autocomplete="off" style="font-size:24px;letter-spacing:4px;font-weight:800"></div>
+    <p class="small muted" style="margin:0">El cliente la genera en su celular con el botón "Generar clave única para el cajero".</p>`, async (dl) => {
     if (!$('#ent-ced', dl).checked) { toast('Primero verifica la cédula física del cliente.', true); return false; }
-    const r = await rpc('recaudador_entregar', { p_solicitud: x.id, p_clave: perfil.rol === 'admin' ? '' : $('#ent-clave', dl).value });
+    if (digits($('#ent-clave', dl).value).length !== 6) { toast('La clave única tiene 6 números.', true); return false; }
+    const r = await rpc('recaudador_entregar', { p_solicitud: x.id, p_clave: digits($('#ent-clave', dl).value) });
     toast(`Premio entregado: ${r.premio} a ${r.cliente}. Se descontaron ${num(r.puntos)} pts.`);
     cargar();
   }, 'Entregar');
@@ -1377,20 +1399,6 @@ async function vAjustes(box) {
     setTimeout(() => { $('#bk-ya').disabled = false; cargarCopias(); }, 8000);
   };
   cargarCopias();
-
-  // Claves de redención por punto recaudador
-  let claves = []; try { claves = await rpc('admin_claves_redencion_estado') || []; } catch {}
-  box.insertAdjacentHTML('beforeend', `<div class="card stack" style="max-width:640px;margin-top:18px">
-    <div><b>Claves de redención</b><div class="small muted">La clave que escribe cada recaudador para entregar un premio. Dásela solo a las personas de ese punto.</div></div>
-    ${claves.map((k) => `<form class="row wrap" data-ct="${k.tienda_id}" novalidate style="gap:8px;align-items:center;border-top:1px solid #eee;padding-top:10px">
-      <b style="min-width:120px">${esc(k.tienda)}</b><span class="pill ${k.configurada ? '' : 'sun'}">${k.configurada ? 'Configurada' : 'Sin clave'}</span>
-      <input class="input" type="password" autocomplete="new-password" placeholder="Clave nueva (mín. 4)" style="flex:1;min-width:160px" name="cl">
-      <button class="btn coral sm">Guardar</button></form>`).join('')}</div>`);
-  box.querySelectorAll('form[data-ct]').forEach((f) => f.onsubmit = async (e) => {
-    e.preventDefault();
-    try { await rpc('admin_clave_redencion', { p_tienda: +f.dataset.ct, p_clave: f.cl.value }); toast('Clave de redención guardada.'); f.cl.value = ''; const pl = f.querySelector('.pill'); pl.textContent = 'Configurada'; pl.classList.remove('sun'); }
-    catch (er) { toast(errText(er), true); }
-  });
 
   // Contraseñas del personal
   const { data: equipo } = await sb.from('perfiles').select('user_id,nombre,rol').order('rol');
