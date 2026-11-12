@@ -815,7 +815,8 @@ function vRedimir(box) {
   const miTienda = tiendaNombre(perfil.tienda_id);
   box.innerHTML = `<div class="row between wrap" style="gap:10px"><h1 style="font-size:28px;font-weight:800">Entregar premio</h1><button class="btn ghost sm" id="rd-act">Actualizar</button></div>
   <p class="muted" style="margin:0">Aquí aparecen los premios que los clientes redimieron desde su celular${perfil.rol === 'admin' ? '' : miTienda === 'RESTAURANTE' ? ' (comida del Restaurante y Punto Dulce)' : ' (prendas y premios de las tiendas)'}. Tienen 24 horas para reclamarlos. Cuando llegue el cliente, verifica su cédula física, pídele la <b>clave única</b> que genera en su celular y escríbela para entregar el premio.</p>
-  <div id="rd-list" class="stack" style="margin-top:14px"><div class="empty">Cargando…</div></div>`;
+  <div id="rd-list" class="stack" style="margin-top:14px"><div class="empty">Cargando…</div></div>
+  <section class="card" style="margin-top:18px"><h2 style="font-size:18px;font-weight:800;margin-bottom:8px">Entregados en los últimos 7 días</h2><div id="rd-hist"><div class="empty">Cargando…</div></div></section>`;
   const tints = ['#FFE7A8', '#FCD9D2', '#D3EEF4', '#E8E2F5'];
   async function cargar() {
     let list; try { list = await rpc('recaudador_solicitudes'); } catch (e) { $('#rd-list').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
@@ -833,6 +834,10 @@ function vRedimir(box) {
       </div>`).join('')}</div>` : '<div class="card empty">No hay premios por entregar en este momento.</div>';
     arrancarRelojes();
     $$('[data-ent]').forEach((b) => b.onclick = () => entregar(list.find((x) => x.id === b.dataset.ent)));
+    let h = []; try { h = await rpc('recaudador_entregados'); } catch {}
+    if (!$('#rd-hist')) return;
+    $('#rd-hist').innerHTML = h.length ? `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Premio</th><th>Puntos</th><th></th></tr></thead><tbody>${h.map((x, i) => `<tr><td>${fdate(x.fecha)} · ${new Date(x.fecha).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</td><td>${esc(x.cliente)}<div class="small muted">C.C. ${esc(num(x.cedula))}</div></td><td>${esc(x.premio)}</td><td>${num(x.puntos)}</td><td><button class="btn ghost sm" data-rep="${i}">Imprimir comprobante</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Aún no hay premios entregados en este punto.</div>';
+    $$('[data-rep]').forEach((b) => b.onclick = () => mostrarComprobante({ ...h[+b.dataset.rep], reimpresion: true }));
   }
   const entregar = (x) => dialog(`<h2 style="font-size:20px;font-weight:800">Entregar premio</h2>
     <div class="card stack" style="gap:4px;background:var(--cream)"><b>${esc(x.premio)}</b><span class="small">${esc(x.cliente)} · C.C. ${esc(num(x.cedula))} · ${num(x.puntos)} pts</span></div>
@@ -1511,7 +1516,7 @@ function reciboHTML(r) {
     <div class="rc-c"><img src="santana-logo.jpg" alt="" style="width:64px;height:64px;border-radius:50%"><div class="rc-big">PUNTOS SANTANA</div><div>Santana del Río Mall Comercial</div></div>
     <div class="rc-l"></div>
     <div class="rc-c rc-big">COMPROBANTE DE REDENCIÓN</div>
-    <div class="rc-c">N° ${esc(r.comprobante)}</div>
+    <div class="rc-c">N° ${esc(r.comprobante)}${r.reimpresion ? ' · COPIA' : ''}</div>
     <div class="rc-l"></div>
     ${fila('Fecha', f.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }))}
     ${fila('Hora', f.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }))}
@@ -1522,7 +1527,7 @@ function reciboHTML(r) {
     <div class="rc-l"></div>
     <div><b>Premio:</b> ${esc(r.premio)}</div>
     ${fila('Puntos redimidos', '−' + num(r.puntos))}
-    ${fila('Saldo restante', num(r.saldo) + ' pts')}
+    ${fila(r.reimpresion ? 'Saldo actual' : 'Saldo restante', num(r.saldo) + ' pts')}
     <div class="rc-l"></div>
     <div style="margin-top:26px;border-top:1px solid #000;padding-top:3px" class="rc-c">Firma del cliente</div>
     <div style="margin-top:22px;border-top:1px solid #000;padding-top:3px" class="rc-c">Entregó: ${esc(r.entregado_por || '')}</div>
@@ -1712,6 +1717,19 @@ document.addEventListener('click', async (e) => {
 });
 
 /* ---------- arranque ---------- */
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// Actualización automática: busca versión nueva cada 5 minutos y recarga cuando no hay nada abierto
+if ('serviceWorker' in navigator) {
+  const habiaControl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then((reg) => { setInterval(() => reg.update().catch(() => {}), 5 * 60 * 1000); }).catch(() => {});
+  let recargando = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!habiaControl || recargando) return;
+    const intentar = () => {
+      if (document.querySelector('dialog[open]') || (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && document.activeElement.value)) return setTimeout(intentar, 20000);
+      recargando = true; location.reload();
+    };
+    intentar();
+  });
+}
 route();
 })();
