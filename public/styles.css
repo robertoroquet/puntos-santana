@@ -248,8 +248,11 @@ dialog form{padding:24px;display:flex;flex-direction:column;gap:14px}
   body.imprimiendo-recibo #recibo{display:block!important}
   html:has(body.imprimiendo-recibo),body.imprimiendo-recibo{background:#fff!important}
 }
-.recibo{width:72mm;max-width:100%;margin:0 auto;font-family:'Poppins',sans-serif;color:#000;font-size:12px;line-height:1.35}
+.recibo{width:60mm;max-width:100%;margin:0 auto;padding:0 2mm 0 1mm;box-sizing:content-box;font-family:'Poppins',sans-serif;color:#000;font-size:11px;line-height:1.3}
 .recibo .rc-c{text-align:center}
-.recibo .rc-l{border-top:1px dashed #000;margin:8px 0}
-.recibo .rc-row{display:flex;justify-content:space-between;gap:8px}
-.recibo .rc-big{font-size:16px;font-weight:800}
+.recibo .rc-l{border-top:1px dashed #000;margin:6px 0}
+.recibo .rc-row{display:flex;justify-content:space-between;gap:6px}
+.recibo .rc-row span{flex:0 0 auto}
+.recibo .rc-row b{min-width:0;overflow-wrap:anywhere;text-align:right}
+.recibo .rc-big{font-size:13px;font-weight:800}
+@media print{ @page{margin:0} }

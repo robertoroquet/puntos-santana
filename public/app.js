@@ -1513,7 +1513,7 @@ function reciboHTML(r) {
   const f = new Date(r.fecha);
   const fila = (a, b) => `<div class="rc-row"><span>${a}</span><b style="text-align:right">${b}</b></div>`;
   return `<div class="recibo">
-    <div class="rc-c"><img src="santana-logo.jpg" alt="" style="width:64px;height:64px;border-radius:50%"><div class="rc-big">PUNTOS SANTANA</div><div>Santana del Río Mall Comercial</div></div>
+    <div class="rc-c"><img src="santana-logo.jpg" alt="" style="width:52px;height:52px;border-radius:50%"><div class="rc-big">PUNTOS SANTANA</div><div>Santana del Río Mall Comercial</div></div>
     <div class="rc-l"></div>
     <div class="rc-c rc-big">COMPROBANTE DE REDENCIÓN</div>
     <div class="rc-c">N° ${esc(r.comprobante)}${r.reimpresion ? ' · COPIA' : ''}</div>
@@ -1522,7 +1522,7 @@ function reciboHTML(r) {
     ${fila('Hora', f.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }))}
     ${fila('Entregado en', esc(r.punto))}
     <div class="rc-l"></div>
-    ${fila('Cliente', esc(r.cliente))}
+    <div>Cliente:</div><div><b style="overflow-wrap:anywhere">${esc(r.cliente)}</b></div>
     ${fila('Cédula', esc(num(r.cedula)))}
     <div class="rc-l"></div>
     <div><b>Premio:</b> ${esc(r.premio)}</div>
