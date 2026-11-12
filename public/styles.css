@@ -241,3 +241,15 @@ dialog form{padding:24px;display:flex;flex-direction:column;gap:14px}
 .stampcard.compact .slot.gift svg{width:16px;height:16px}
 .stampcard.compact .sc-foot{padding:8px 14px 2px;font-size:12px}
 .stampcard.compact .sc-rules{padding:4px 14px 10px;font-size:10px}
+/* Comprobante de redención (impresión) */
+#recibo{display:none}
+@media print{
+  body.imprimiendo-recibo > *:not(#recibo){display:none!important}
+  body.imprimiendo-recibo #recibo{display:block!important}
+  html:has(body.imprimiendo-recibo),body.imprimiendo-recibo{background:#fff!important}
+}
+.recibo{width:72mm;max-width:100%;margin:0 auto;font-family:'Poppins',sans-serif;color:#000;font-size:12px;line-height:1.35}
+.recibo .rc-c{text-align:center}
+.recibo .rc-l{border-top:1px dashed #000;margin:8px 0}
+.recibo .rc-row{display:flex;justify-content:space-between;gap:8px}
+.recibo .rc-big{font-size:16px;font-weight:800}

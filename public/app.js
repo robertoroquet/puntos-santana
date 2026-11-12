@@ -844,6 +844,7 @@ function vRedimir(box) {
     const r = await rpc('recaudador_entregar', { p_solicitud: x.id, p_clave: digits($('#ent-clave', dl).value) });
     toast(`Premio entregado: ${r.premio} a ${r.cliente}. Se descontaron ${num(r.puntos)} pts.`);
     cargar();
+    setTimeout(() => mostrarComprobante(r), 50);
   }, 'Entregar');
   $('#rd-act').onclick = cargar;
   cargar();
@@ -1501,6 +1502,50 @@ async function vAjustes(box) {
   });
 }
 
+
+/* ---- Comprobante de redención para imprimir ---- */
+function reciboHTML(r) {
+  const f = new Date(r.fecha);
+  const fila = (a, b) => `<div class="rc-row"><span>${a}</span><b style="text-align:right">${b}</b></div>`;
+  return `<div class="recibo">
+    <div class="rc-c"><img src="santana-logo.jpg" alt="" style="width:64px;height:64px;border-radius:50%"><div class="rc-big">PUNTOS SANTANA</div><div>Santana del Río Mall Comercial</div></div>
+    <div class="rc-l"></div>
+    <div class="rc-c rc-big">COMPROBANTE DE REDENCIÓN</div>
+    <div class="rc-c">N° ${esc(r.comprobante)}</div>
+    <div class="rc-l"></div>
+    ${fila('Fecha', f.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }))}
+    ${fila('Hora', f.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }))}
+    ${fila('Entregado en', esc(r.punto))}
+    <div class="rc-l"></div>
+    ${fila('Cliente', esc(r.cliente))}
+    ${fila('Cédula', esc(num(r.cedula)))}
+    <div class="rc-l"></div>
+    <div><b>Premio:</b> ${esc(r.premio)}</div>
+    ${fila('Puntos redimidos', '−' + num(r.puntos))}
+    ${fila('Saldo restante', num(r.saldo) + ' pts')}
+    <div class="rc-l"></div>
+    <div style="margin-top:26px;border-top:1px solid #000;padding-top:3px" class="rc-c">Firma del cliente</div>
+    <div style="margin-top:22px;border-top:1px solid #000;padding-top:3px" class="rc-c">Entregó: ${esc(r.entregado_por || '')}</div>
+    <div class="rc-c" style="margin-top:10px">¡Gracias por ser parte de Puntos Santana!</div>
+  </div>`;
+}
+function imprimirRecibo(r) {
+  let el = document.getElementById('recibo');
+  if (!el) { el = document.createElement('div'); el.id = 'recibo'; document.body.appendChild(el); }
+  el.innerHTML = reciboHTML(r);
+  document.body.classList.add('imprimiendo-recibo');
+  const fin = () => { document.body.classList.remove('imprimiendo-recibo'); window.removeEventListener('afterprint', fin); };
+  window.addEventListener('afterprint', fin);
+  const img = el.querySelector('img');
+  const go = () => { window.print(); setTimeout(fin, 1500); };
+  if (img && !img.complete) { img.onload = go; img.onerror = go; } else go();
+}
+function mostrarComprobante(r) {
+  dialog(`<h2 style="font-size:20px;font-weight:800">Premio entregado</h2>
+    <div style="border:1px solid #E8E1D2;border-radius:14px;padding:14px;background:#fff;max-height:52vh;overflow:auto">${reciboHTML(r)}</div>`,
+    async () => { imprimirRecibo(r); return false; }, 'Imprimir comprobante');
+  const dls = document.querySelectorAll('dialog'); const x = dls[dls.length - 1] && dls[dls.length - 1].querySelector('[data-x]'); if (x) x.textContent = 'Cerrar';
+}
 
 /* ---- Helado de cumpleaños (Restaurante / Punto Dulce) ---- */
 function vHelado(box) {
