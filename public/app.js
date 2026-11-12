@@ -52,6 +52,11 @@ const ERR = {
   FECHA_FUTURA: 'La fecha de la factura no puede ser futura.',
   FACTURA_VENCIDA: 'Esa factura tiene más de un año: sus puntos ya estarían vencidos.',
   NOMBRE_NO_COINCIDE: 'La factura no está a nombre de este cliente. Solo el titular puede acumular sus facturas.',
+  CLAVE_REDENCION_INCORRECTA: 'Clave de redención incorrecta.',
+  CLAVE_NO_CONFIGURADA: 'Este punto aún no tiene clave de redención. Pídela al administrador.',
+  SOLICITUD_VENCIDA: 'Esta solicitud venció: pasaron las 24 horas.',
+  CLAVE_CORTA: 'La clave debe tener mínimo 4 caracteres.',
+  USA_CLAVE_REDENCION: 'Los premios se entregan desde la lista de solicitudes con la clave de redención.',
   REDIME_EN_TIENDA: 'Los premios se reclaman en Pilatos, Derek o el Restaurante con tu cédula y tu PIN.',
   PREMIO_OTRA_TIENDA: 'Este premio no se entrega aquí: las prendas se entregan en Pilatos o Derek y la comida en el Restaurante.',
   FACTURA_YA_ACUMULADA: 'Esta factura ya fue registrada antes. No se sumaron puntos.',
@@ -115,6 +120,18 @@ window.addEventListener('hashchange', route);
 const TK = 'ps_cliente_token';
 const tok = () => { try { return localStorage.getItem(TK); } catch { return null; } };
 const setTok = (v) => { try { v ? localStorage.setItem(TK, v) : localStorage.removeItem(TK); } catch {} };
+/* Cuenta regresiva hasta una fecha (HH:MM:SS) */
+function restante(fecha) {
+  const ms = new Date(fecha) - Date.now(); if (ms <= 0) return '00:00:00';
+  const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3), sg = Math.floor(ms % 60e3 / 1e3);
+  return [h, m, sg].map((x) => String(x).padStart(2, '0')).join(':');
+}
+let relojes = null;
+function arrancarRelojes() {
+  clearInterval(relojes);
+  relojes = setInterval(() => { const els = document.querySelectorAll('[data-hasta]'); if (!els.length) return clearInterval(relojes); els.forEach((el) => { el.textContent = restante(el.dataset.hasta); }); }, 1000);
+}
+
 let cInicio = null;
 
 async function clientCall(fn, extra) {
@@ -128,6 +145,7 @@ async function clientCall(fn, extra) {
 function clientRoute(tab, arg) {
   document.title = 'Puntos Santana';
   if (!tok()) return clientLogin();
+  if (tab === 'canje' && arg) return clientCanje(arg);
   if (tab === 'premios') return clientPremios();
   if (tab === 'cupones') return clientCupones();
   if (tab === 'mensajes') return clientMensajes();
@@ -237,8 +255,9 @@ async function clientInicio() {
   const pend = (d.solicitudes || []).map((s) => `
     <div class="pending stack" style="gap:8px">
       <div class="row between"><b>${s.tipo === 'sellos' ? 'Regalo de sellos' : esc(s.premio)}</b>${s.tipo === 'premio' ? `<span class="pill navy">${num(s.puntos)} pts</span>` : ''}</div>
-      <span class="small">Reclámalo en ${s.tipo === 'sellos' ? 'la caja del <b>Restaurante</b>' : '<b>Pilatos</b> o <b>Derek</b>'} con tu cédula y tu PIN.</span>
-      <button class="btn ghost sm" data-cancel="${s.id}" style="align-self:flex-start">Cancelar solicitud</button>
+      ${s.tipo === 'sellos' ? '<span class="small">Reclámalo en la caja del <b>Restaurante</b> con tu cédula y tu PIN.</span><button class="btn ghost sm" data-cancel="' + s.id + '" style="align-self:flex-start">Cancelar solicitud</button>'
+        : `<span class="small">Reclámala en ${s.tienda === 'RESTAURANTE' || s.tienda === 'PUNTO DULCE' ? 'el <b>Restaurante</b>' : '<b>Pilatos</b> o <b>Derek</b>'}. Te quedan <b data-hasta="${esc(s.expira_en)}">${restante(s.expira_en)}</b></span>
+        <a class="btn coral sm" href="#/canje/${s.id}" style="align-self:flex-start">Ver mi solicitud</a>`}
     </div>`).join('');
   app.innerHTML = `
   <div class="phone"><div class="phone-body">
@@ -276,6 +295,7 @@ async function clientInicio() {
     });
   };
   $('#salir').onclick = async () => { try { await rpc('cliente_salir', { p_token: tok() }); } catch {} setTok(null); cInicio = null; route(); };
+  arrancarRelojes();
   $$('[data-cancel]').forEach((b) => b.onclick = async () => { if (!confirm('¿Cancelar esta solicitud?')) return; try { await clientCall('cliente_cancelar', { p_solicitud: b.dataset.cancel }); toast('Solicitud cancelada.'); clientInicio(); } catch (e) { toast(errText(e), true); } });
 }
 
@@ -297,7 +317,7 @@ async function clientPremios() {
         ${p.descripcion ? `<span class="small muted">${esc(p.descripcion)}</span>` : ''}
         <b style="color:var(--coral-t)">${num(p.puntos)} pts</b>
         ${p.agotado ? '<span class="pill" style="background:var(--line);align-self:flex-start">Agotado</span>'
-          : ok ? `<span class="pill" style="background:#E6F4EA;color:#1B6B3A;align-self:flex-start">¡Ya lo puedes reclamar!</span><span class="small muted">Reclámalo en ${p.tienda === 'RESTAURANTE' || p.tienda === 'PUNTO DULCE' ? 'el <b>Restaurante</b>' : '<b>Pilatos</b> o <b>Derek</b>'} con tu cédula y tu PIN.</span>`
+          : ok ? `<button class="btn coral sm" data-quiero="${p.id}" data-nombre="${esc(p.nombre)}" style="align-self:flex-start">Redimir</button>`
           : `<div class="bar"><div style="width:${pct}%"></div></div><span class="small muted">Te faltan ${num(p.puntos - Math.max(0, disp))} pts</span>`}
       </div></div>`;
   }).join('') || '<div class="empty">Pronto publicaremos los premios.</div>';
@@ -306,10 +326,52 @@ async function clientPremios() {
     <div class="row between"><h1 style="font-size:24px;font-weight:800">Premios</h1><span class="pill navy" style="font-size:13px;padding:6px 14px">${num(d.puntos)} pts</span></div>
     ${reservado ? `<p class="small muted" style="margin:0">Tienes ${num(reservado)} pts apartados en premios por reclamar.</p>` : ''}
     ${items}
-    <p class="small muted center" style="margin:0">Las prendas se reclaman en <b>Pilatos</b> o <b>Derek</b> y los premios de comida en el <b>Restaurante</b>, con tu cédula y tu PIN.</p>
+    <p class="small muted center" style="margin:0">Al redimir tienes <b>24 horas</b> para reclamarlo: las prendas en <b>Pilatos</b> o <b>Derek</b> y la comida en el <b>Restaurante</b>.</p>
   </div>${tabbar('premios')}</div>`;
+  $$('[data-quiero]').forEach((b) => b.onclick = async () => {
+    if (!confirm(`¿Quieres redimir "${b.dataset.nombre}"? Tendrás 24 horas para reclamarlo.`)) return;
+    b.disabled = true;
+    try { const r = await clientCall('cliente_solicitar', { p_premio: b.dataset.quiero }); cInicio = null; location.hash = '#/canje/' + r.id; }
+    catch (e) { toast(errText(e), true); b.disabled = false; }
+  });
 }
 
+
+/* ---- Solicitud de premio con temporizador de 24 horas ---- */
+async function clientCanje(id) {
+  app.innerHTML = `<div class="phone"><div class="phone-body"><div class="empty">Cargando…</div></div>${tabbar('premios')}</div>`;
+  let d; try { d = await clientCall('cliente_canje', { p_solicitud: id }); } catch (e) { if (tok()) toast(errText(e), true); return; }
+  if (!d) { location.hash = '#/premios'; return; }
+  const est = d.estado, col = est === 'entregada' ? '#1B6B3A' : est === 'pendiente' ? 'var(--coral)' : '#7A8299';
+  const cab = { pendiente: 'MUESTRA ESTA PANTALLA EN', entregada: 'PREMIO ENTREGADO EN', vencida: 'SOLICITUD VENCIDA', cancelada: 'SOLICITUD CANCELADA' }[est];
+  app.innerHTML = `
+  <div class="phone"><div class="phone-body">
+    <div class="card stack" style="gap:14px;padding:0;overflow:hidden;border:3px solid ${col}">
+      <div style="background:${col};color:#fff;padding:14px 18px;text-align:center">
+        <div style="font-size:13px;font-weight:700;letter-spacing:1px">${cab}</div>
+        <div style="font-size:22px;font-weight:900">${est === 'entregada' ? esc(d.entregada_en_tienda || '') : est === 'pendiente' ? esc(d.donde).toUpperCase() : ''}</div></div>
+      ${d.imagen_url ? `<img src="${esc(d.imagen_url)}" alt="" style="width:100%;max-height:230px;object-fit:cover;display:block;margin-top:-14px">` : ''}
+      <div class="stack" style="gap:6px;padding:0 18px">
+        <b style="font-size:22px;line-height:1.2">${esc(d.premio)}</b>
+        <span class="small muted">${num(d.puntos)} pts · ${esc(d.cliente)} · C.C. ${esc(num(d.cedula))}</span>
+      </div>
+      ${est === 'pendiente' ? `<div style="margin:0 18px;text-align:center;background:#FFF5F3;border-radius:16px;padding:14px">
+          <div class="small" style="font-weight:700">Tiempo para reclamarlo</div>
+          <div style="font-size:44px;font-weight:900;color:var(--coral-t);font-variant-numeric:tabular-nums;letter-spacing:1px" data-hasta="${esc(d.expira_en)}">${restante(d.expira_en)}</div>
+          <div class="small muted">Vence ${fdate(d.expira_en)} a las ${new Date(d.expira_en).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</div></div>
+        <p class="small" style="margin:0 18px">Ve a <b>${esc(d.donde)}</b> con tu cédula. El recaudador verá tu solicitud y la confirmará con su clave. Tus puntos se descuentan al recibir el premio.</p>
+        <button class="btn ghost sm" id="cj-cancel" style="margin:0 18px 18px;align-self:flex-start">Cancelar solicitud</button>`
+      : est === 'entregada' ? `<div style="margin:0 18px 18px;background:#E6F4EA;color:#1B6B3A;border-radius:14px;padding:14px;font-weight:700;text-align:center">✓ Entregado el ${fdate(d.entregada_en)} · ${new Date(d.entregada_en).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}. ¡Disfrútalo!</div>`
+      : `<div style="margin:0 18px 18px" class="small muted">${est === 'vencida' ? 'Pasaron las 24 horas sin reclamarlo. Tus puntos siguen en tu cuenta; puedes volver a redimirlo cuando quieras.' : 'Cancelaste esta solicitud. Tus puntos siguen en tu cuenta.'}</div>`}
+    </div>
+    <a class="small center muted" href="#/">Volver al inicio</a>
+  </div>${tabbar('premios')}</div>`;
+  if (est === 'pendiente') {
+    arrancarRelojes();
+    $('#cj-cancel').onclick = async () => { if (!confirm('¿Cancelar esta solicitud?')) return; try { await clientCall('cliente_cancelar', { p_solicitud: id }); cInicio = null; clientCanje(id); } catch (e) { toast(errText(e), true); } };
+    const vigila = setInterval(async () => { if (!location.hash.includes(id)) return clearInterval(vigila); try { const n = await clientCall('cliente_canje', { p_solicitud: id }); if (n && n.estado !== 'pendiente') { clearInterval(vigila); cInicio = null; clientCanje(id); } } catch {} }, 15000);
+  }
+}
 
 async function clientCupones() {
   app.innerHTML = `<div class="phone"><div class="phone-body"><div class="empty">Cargando…</div></div>${tabbar('cupones')}</div>`;
@@ -725,53 +787,39 @@ function vSellos(box) {
 }
 
 function vRedimir(box) {
-  const s = searchBox(() => draw());
   const miTienda = tiendaNombre(perfil.tienda_id);
-  const comida = (pr) => pr.tienda === 'RESTAURANTE' || pr.tienda === 'PUNTO DULCE';
-  const puede = (pr) => perfil.rol === 'admin' ? true : miTienda === 'RESTAURANTE' ? comida(pr) : (miTienda === 'PILATOS' || miTienda === 'DEREK') ? !comida(pr) : false;
-  box.innerHTML = `<h1 style="font-size:28px;font-weight:800">Entregar premio</h1>
-  <p class="muted" style="margin:0">Busca la cédula del cliente, elige el premio que quiere, pídele que escriba su PIN y entrégalo. ${miTienda === 'RESTAURANTE' ? 'Aquí se entregan los premios de comida del Restaurante.' : perfil.rol === 'admin' ? '' : 'Aquí se entregan las prendas y premios de las tiendas.'}</p>${s.html}<div id="red"></div>`;
-  s.bind();
-  let premios = null, elegido = null;
-  async function draw() {
-    const red = $('#red');
-    if (!ficha) { red.innerHTML = ''; return; }
-    $('#sres').innerHTML = clientBar(ficha);
-    if (!premios) { const { data } = await sb.from('premios').select('*').eq('activo', true).order('puntos'); premios = (data || []).filter(puede); }
-    const sel = (ficha.solicitudes || []).filter((x) => x.tipo === 'sellos');
-    const sellosHtml = sel.length && (miTienda === 'RESTAURANTE' || perfil.rol === 'admin') ? `<div class="card" style="border-color:var(--sun)">El cliente pidió su <b>regalo de sellos</b>: entrégalo en <a href="#/personal/sellos">Marcar sello</a>.</div>` : '';
-    if (ficha.activo === false) { red.innerHTML = sellosHtml + '<div class="card empty">Este cliente debe activar su cuenta (arriba) antes de redimir.</div>'; return; }
-    const tints = ['#FFE7A8', '#FCD9D2', '#D3EEF4', '#E8E2F5'];
-    red.innerHTML = sellosHtml + (premios.length ? `<h2 style="font-size:18px;font-weight:800;margin:6px 0 10px">1. Elige el premio · el cliente tiene <span style="color:var(--coral-t)">${num(ficha.puntos)} pts</span></h2>
-      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">${premios.map((pr, i) => {
-        const alcanza = ficha.puntos >= pr.puntos && !(pr.stock != null && pr.stock <= 0);
-        return `<button type="button" class="card stack" data-pr="${pr.id}" ${alcanza ? '' : 'disabled'} aria-pressed="${elegido === pr.id}" style="gap:6px;text-align:left;padding:12px;cursor:${alcanza ? 'pointer' : 'not-allowed'};opacity:${alcanza ? 1 : .5};${elegido === pr.id ? 'border:3px solid var(--coral)' : ''}">
-          <div style="height:120px;border-radius:12px;overflow:hidden;background:${tints[i % 4]};display:flex;align-items:center;justify-content:center">${pr.imagen_url ? `<img src="${esc(pr.imagen_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ic('gift', 30, 1.8)}</div>
-          <b>${esc(pr.nombre)}</b><span class="small muted">${esc(pr.tienda || '')}</span>
-          <b style="color:var(--coral-t)">${num(pr.puntos)} pts</b>
-          <span class="small">${alcanza ? `Le quedarán ${num(ficha.puntos - pr.puntos)} pts` : (pr.stock != null && pr.stock <= 0 ? 'Agotado' : `Le faltan ${num(pr.puntos - ficha.puntos)} pts`)}</span></button>`;
-      }).join('')}</div>
-      ${elegido ? `<form class="navy-card" id="rf" novalidate style="margin-top:16px;max-width:520px">
-        <h2 style="font-size:18px;font-weight:800">2. Confirmar con el PIN del cliente</h2>
-        <p style="margin:0;color:#CFE9F0;font-size:14px">Premio: <b style="color:#fff">${esc(premios.find((x) => x.id === elegido).nombre)}</b> · ${num(premios.find((x) => x.id === elegido).puntos)} pts. El cliente escribe su PIN.</p>
-        <div class="field"><label for="r-pin">PIN del cliente</label><input class="input pin" id="r-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
-        <button class="btn coral block" style="height:56px">Entregar premio</button></form>` : ''}`
-      : '<div class="card empty">No hay premios para entregar en este punto.</div>');
-    $$('[data-pr]').forEach((b) => b.onclick = () => { elegido = b.dataset.pr; draw().then(() => { const i = $('#r-pin'); if (i) { i.focus(); i.scrollIntoView({ block: 'center' }); } }); });
-    const rf = $('#rf');
-    if (rf) rf.onsubmit = async (e) => {
-      e.preventDefault();
-      const b = $('button', rf); b.disabled = true;
-      try {
-        const r = await rpc('recaudador_redimir', { p_cedula: ficha.cedula, p_premio: elegido, p_pin: $('#r-pin').value });
-        ficha = r.cliente; elegido = null; premios = null;
-        toast(`Premio entregado: ${r.premio}. Se descontaron ${num(r.puntos)} pts.`);
-        await draw();
-        $('#red').insertAdjacentHTML('afterbegin', `<div class="card okcard" style="margin-bottom:12px">${ic('check', 30, 2.6)}<div><b style="font-size:18px">Premio entregado</b><div class="small">${esc(r.premio)} · −${num(r.puntos)} pts · Le quedan ${num(ficha.puntos)} pts</div></div></div>`);
-      } catch (er) { toast(errText(er), true); b.disabled = false; $('#r-pin').value = ''; $('#r-pin').focus(); }
-    };
+  box.innerHTML = `<div class="row between wrap" style="gap:10px"><h1 style="font-size:28px;font-weight:800">Entregar premio</h1><button class="btn ghost sm" id="rd-act">Actualizar</button></div>
+  <p class="muted" style="margin:0">Aquí aparecen los premios que los clientes redimieron desde su celular${perfil.rol === 'admin' ? '' : miTienda === 'RESTAURANTE' ? ' (comida del Restaurante y Punto Dulce)' : ' (prendas y premios de las tiendas)'}. Tienen 24 horas para reclamarlos. Verifica la cédula física, entrega el premio y confírmalo con la clave de redención.</p>
+  <div id="rd-list" class="stack" style="margin-top:14px"><div class="empty">Cargando…</div></div>`;
+  const tints = ['#FFE7A8', '#FCD9D2', '#D3EEF4', '#E8E2F5'];
+  async function cargar() {
+    let list; try { list = await rpc('recaudador_solicitudes'); } catch (e) { $('#rd-list').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+    if (!$('#rd-list')) return;
+    $('#rd-list').innerHTML = list.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">${list.map((x, i) => `
+      <div class="card stack" style="gap:8px;padding:14px">
+        <div style="height:130px;border-radius:12px;overflow:hidden;background:${tints[i % 4]};display:flex;align-items:center;justify-content:center">${x.imagen_url ? `<img src="${esc(x.imagen_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ic('gift', 30, 1.8)}</div>
+        <b style="font-size:17px">${esc(x.premio)}</b>
+        <span class="small muted">${esc(x.tienda || '')} · ${num(x.puntos)} pts</span>
+        <div class="stack" style="gap:0"><b>${esc(x.cliente)}</b><span class="small">C.C. ${esc(num(x.cedula))}</span></div>
+        <span class="pill sun" style="align-self:flex-start">Vence en <b data-hasta="${esc(x.expira_en)}" style="margin-left:4px">${restante(x.expira_en)}</b></span>
+        ${x.saldo < x.puntos ? `<span class="small" style="color:var(--coral-t)">El cliente ya no tiene puntos suficientes (${num(x.saldo)}).</span>` : ''}
+        <button class="btn coral" data-ent="${x.id}" ${x.saldo < x.puntos ? 'disabled' : ''}>Entregar</button>
+      </div>`).join('')}</div>` : '<div class="card empty">No hay premios por entregar en este momento.</div>';
+    arrancarRelojes();
+    $$('[data-ent]').forEach((b) => b.onclick = () => entregar(list.find((x) => x.id === b.dataset.ent)));
   }
-  if (ficha) draw();
+  const entregar = (x) => dialog(`<h2 style="font-size:20px;font-weight:800">Entregar premio</h2>
+    <div class="card stack" style="gap:4px;background:var(--cream)"><b>${esc(x.premio)}</b><span class="small">${esc(x.cliente)} · C.C. ${esc(num(x.cedula))} · ${num(x.puntos)} pts</span></div>
+    <label class="check"><input type="checkbox" id="ent-ced"><span>Verifiqué la <b>cédula física</b> del cliente</span></label>
+    ${perfil.rol === 'admin' ? '' : `<div class="field"><label for="ent-clave">Clave de redención</label><input class="input" id="ent-clave" type="password" autocomplete="off"></div>`}`, async (dl) => {
+    if (!$('#ent-ced', dl).checked) { toast('Primero verifica la cédula física del cliente.', true); return false; }
+    const r = await rpc('recaudador_entregar', { p_solicitud: x.id, p_clave: perfil.rol === 'admin' ? '' : $('#ent-clave', dl).value });
+    toast(`Premio entregado: ${r.premio} a ${r.cliente}. Se descontaron ${num(r.puntos)} pts.`);
+    cargar();
+  }, 'Entregar');
+  $('#rd-act').onclick = cargar;
+  cargar();
+  const auto = setInterval(() => { if (!location.hash.includes('redimir')) return clearInterval(auto); cargar(); }, 30000);
 }
 
 /* ---------------- ADMIN ---------------- */
@@ -1321,6 +1369,20 @@ async function vAjustes(box) {
     setTimeout(() => { $('#bk-ya').disabled = false; cargarCopias(); }, 8000);
   };
   cargarCopias();
+
+  // Claves de redención por punto recaudador
+  let claves = []; try { claves = await rpc('admin_claves_redencion_estado') || []; } catch {}
+  box.insertAdjacentHTML('beforeend', `<div class="card stack" style="max-width:640px;margin-top:18px">
+    <div><b>Claves de redención</b><div class="small muted">La clave que escribe cada recaudador para entregar un premio. Dásela solo a las personas de ese punto.</div></div>
+    ${claves.map((k) => `<form class="row wrap" data-ct="${k.tienda_id}" novalidate style="gap:8px;align-items:center;border-top:1px solid #eee;padding-top:10px">
+      <b style="min-width:120px">${esc(k.tienda)}</b><span class="pill ${k.configurada ? '' : 'sun'}">${k.configurada ? 'Configurada' : 'Sin clave'}</span>
+      <input class="input" type="password" autocomplete="new-password" placeholder="Clave nueva (mín. 4)" style="flex:1;min-width:160px" name="cl">
+      <button class="btn coral sm">Guardar</button></form>`).join('')}</div>`);
+  box.querySelectorAll('form[data-ct]').forEach((f) => f.onsubmit = async (e) => {
+    e.preventDefault();
+    try { await rpc('admin_clave_redencion', { p_tienda: +f.dataset.ct, p_clave: f.cl.value }); toast('Clave de redención guardada.'); f.cl.value = ''; const pl = f.querySelector('.pill'); pl.textContent = 'Configurada'; pl.classList.remove('sun'); }
+    catch (er) { toast(errText(er), true); }
+  });
 
   // Contraseñas del personal
   const { data: equipo } = await sb.from('perfiles').select('user_id,nombre,rol').order('rol');
