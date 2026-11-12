@@ -52,6 +52,11 @@ const ERR = {
   FECHA_FUTURA: 'La fecha de la factura no puede ser futura.',
   FACTURA_VENCIDA: 'Esa factura tiene más de un año: sus puntos ya estarían vencidos.',
   NOMBRE_NO_COINCIDE: 'La factura no está a nombre de este cliente. Solo el titular puede acumular sus facturas.',
+  SOLO_RESTAURANTE: 'El helado de cumpleaños solo se entrega en el Restaurante (Punto Dulce).',
+  CLIENTE_SIN_ACTIVAR: 'El cliente debe activar su cuenta en Puntos Santana primero.',
+  SIN_FECHA_NACIMIENTO: 'El cliente no tiene fecha de nacimiento registrada.',
+  NO_ES_SU_MES: 'Este no es el mes de cumpleaños del cliente.',
+  HELADO_YA_ENTREGADO: 'Este cliente ya recibió su helado de cumpleaños este año.',
   CLAVE_REDENCION_INCORRECTA: 'Clave de redención incorrecta.',
   CLAVE_NO_CONFIGURADA: 'Este punto aún no tiene clave de redención. Pídela al administrador.',
   SOLICITUD_VENCIDA: 'Esta solicitud venció: pasaron las 24 horas.',
@@ -277,6 +282,7 @@ async function clientInicio() {
     <div class="card row between wrap" style="gap:10px"><div><span class="small muted">Tu tienda favorita</span><div style="font-weight:800;font-size:16px">${esc(d.tienda_favorita || 'Sin elegir')}</div><span class="small muted">Elige también de qué tiendas quieres recibir promociones.</span></div><button class="btn ghost sm" id="fav">Mis tiendas</button></div>
     ${tarjetaPush()}
     ${botonInstalar()}
+    ${d.helado ? `<div class="card row" style="gap:14px;align-items:center;${d.helado.reclamado_en ? '' : 'border-color:var(--sun);background:#FFFBEA'}"><div style="font-size:38px">🍦</div><div class="stack" style="gap:2px"><b>${d.helado.reclamado_en ? 'Ya recibiste tu helado de cumpleaños' : '¡Feliz mes de cumpleaños! Tienes un helado de 2 bolas'}</b><span class="small">${d.helado.reclamado_en ? 'Lo reclamaste el ' + fdate(d.helado.reclamado_en) + '. ¡Que lo hayas disfrutado!' : 'Reclámalo en <b>Punto Dulce</b> durante este mes presentando la factura de tu compra con descuento de cumpleaños.'}</span></div></div>` : ''}
     ${pend ? `<section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Premios por reclamar</h2>${pend}</section>` : ''}
     <section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Últimos movimientos</h2>${mov}</section>
   </div>${tabbar('inicio')}</div>`;
@@ -436,11 +442,11 @@ async function staffRoute(view) {
   if (p.rol === 'admin' && !(await adminVerificado())) return adminSegundoPaso();
   const isAdmin = p.rol === 'admin';
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
-  const adminOnly = ['alertas', 'dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
+  const adminOnly = ['helados', 'alertas', 'dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
   staffShell(view);
   const box = $('#content');
-  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas };
+  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas, helado: vHelado, helados: vHelados };
   Promise.resolve((views[view] || vAcumular)(box)).catch(() => {}).finally(() => { if (isAdmin) contarAlertas(); });
 }
 
@@ -518,8 +524,8 @@ function staffShell(view) {
   const isAdmin = perfil.rol === 'admin';
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
-    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('informe', 'chart', 'Informe mensual')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}</nav>`
-    : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}</nav>`;
+    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('informe', 'chart', 'Informe mensual')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('helados', 'chart', 'Helados de cumpleaños')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}${L('helado', 'gift', 'Helado cumpleaños')}</nav>`
+    : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}${tiendaNombre(perfil.tienda_id) === 'RESTAURANTE' ? L('helado', 'gift', 'Helado cumpleaños') : ''}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
   <div class="staff">
@@ -1329,13 +1335,15 @@ async function vAjustes(box) {
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
       <div class="field"><label for="a-p">Puntos por cada $1.000</label><input class="input" id="a-p" inputmode="numeric" value="${esc(c.puntos_por_mil)}"></div>
       <div class="field"><label for="a-s">Sellos para el regalo</label><input class="input" id="a-s" inputmode="numeric" value="${esc(c.sellos_meta)}"></div>
-      <div class="field"><label for="a-v">Vigencia de puntos (meses)</label><input class="input" id="a-v" inputmode="numeric" value="${esc(c.vigencia_meses)}"></div></div>
+      <div class="field"><label for="a-v">Vigencia de puntos (meses)</label><input class="input" id="a-v" inputmode="numeric" value="${esc(c.vigencia_meses)}"></div>
+      <div class="field"><label for="a-h">Costo de un helado de cumpleaños ($)</label><input class="input" id="a-h" inputmode="numeric" value="${c.costo_helado != null ? esc(c.costo_helado) : ''}" placeholder="Sin definir"></div></div>
     <p class="small muted" style="margin:0">Los cambios en puntos y vigencia aplican a compras nuevas; las anteriores conservan sus puntos y su fecha de vencimiento.</p>
     <button class="btn coral" style="align-self:flex-start">Guardar ajustes</button>
   </form>`;
   $('#af').onsubmit = async (e) => {
     e.preventDefault();
     const rows = [{ clave: 'regalo_sellos', valor: $('#a-r').value.trim() || '[REGALO POR DEFINIR]' }, { clave: 'puntos_por_mil', valor: Number(digits($('#a-p').value)) || 25 }, { clave: 'sellos_meta', valor: Number(digits($('#a-s').value)) || 8 }, { clave: 'vigencia_meses', valor: Number(digits($('#a-v').value)) || 12 }];
+    rows.push({ clave: 'costo_helado', valor: digits($('#a-h').value) ? Number(digits($('#a-h').value)) : null });
     const { error } = await sb.from('config').upsert(rows);
     if (error) return toast(errText(error), true);
     config = Object.fromEntries(rows.map((r) => [r.clave, r.valor])); toast('Ajustes guardados.');
@@ -1415,6 +1423,68 @@ async function vAjustes(box) {
 }
 
 
+/* ---- Helado de cumpleaños (Restaurante / Punto Dulce) ---- */
+function vHelado(box) {
+  box.innerHTML = `<h1 style="font-size:28px;font-weight:800">Helado de cumpleaños</h1>
+  <p class="muted" style="margin:0">Helado de 2 bolas para clientes inscritos en su mes de cumpleaños, una vez al año. Pide la factura de su compra con descuento de cumpleaños.</p>
+  <form id="hf" class="row" novalidate style="gap:10px;margin-top:14px;max-width:620px"><input class="input" id="h-ced" inputmode="numeric" placeholder="Cédula del cliente" style="flex:1"><button class="btn navy">Buscar</button></form>
+  <div id="h-res" style="margin-top:14px;max-width:620px"></div>`;
+  $('#hf').onsubmit = async (e) => {
+    e.preventDefault();
+    const ced = digits($('#h-ced').value); if (!ced) return toast('Escribe la cédula.', true);
+    let d; try { d = await rpc('helado_estado', { p_cedula: ced }); } catch (er) { $('#h-res').innerHTML = `<div class="card empty">${errText(er)}</div>`; return; }
+    const cab = `<div class="stack" style="gap:2px"><b style="font-size:18px">${esc(d.nombre)}</b><span class="small">C.C. ${esc(num(d.cedula))}${d.fecha_nacimiento ? ' · Cumple el ' + fdate(d.fecha_nacimiento).replace(/ \d{4}$/, '') : ''}</span></div>`;
+    const no = (t) => `<div class="card stack" style="gap:10px;border-color:var(--coral);background:#FFF5F3">${cab}<b style="color:var(--coral-t)">✕ ${t}</b></div>`;
+    if (!d.activo) return $('#h-res').innerHTML = no('No tiene la cuenta activa en Puntos Santana. Actívala o inscríbelo primero.');
+    if (!d.fecha_nacimiento) return $('#h-res').innerHTML = no('No tiene fecha de nacimiento registrada.');
+    if (!d.cumple_mes) return $('#h-res').innerHTML = no('Este no es su mes de cumpleaños.');
+    if (d.reclamado_en) return $('#h-res').innerHTML = no(`Ya recibió su helado este año (${fdate(d.reclamado_en)}, factura ${esc(d.reclamado_factura)}).`);
+    $('#h-res').innerHTML = `<form class="card stack" id="hf2" novalidate style="gap:12px;border-color:#1B6B3A">${cab}
+      <b style="color:#1B6B3A">✓ Puede recibir su helado de 2 bolas</b>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+        <div class="field"><label for="h-f">N° de factura *</label><input class="input" id="h-f"></div>
+        <div class="field"><label for="h-t">Tienda de la compra *</label><select class="input" id="h-t"><option value="">Elige…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
+        <div class="field"><label for="h-v">Valor de la compra *</label><input class="input" id="h-v" inputmode="numeric"></div></div>
+      <button class="btn coral" style="height:54px">Entregar helado</button></form>`;
+    $('#h-v').oninput = (ev) => { const n = digits(ev.target.value); ev.target.value = n ? num(+n) : ''; };
+    $('#hf2').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const f = $('#h-f').value.trim(), t = +$('#h-t').value, v = +digits($('#h-v').value);
+      if (!f || !t || !v) return toast('Completa factura, tienda y valor.', true);
+      const b = $('button', $('#hf2')); b.disabled = true;
+      try { const r = await rpc('entregar_helado', { p_cedula: d.cedula, p_factura: f, p_tienda_id: t, p_valor: v });
+        $('#h-res').innerHTML = `<div class="card okcard">${ic('check', 30, 2.6)}<div><b style="font-size:18px">Helado entregado</b><div class="small">${esc(r.nombre)} · factura ${esc(f.toUpperCase())}</div></div></div>`; $('#h-ced').value = ''; $('#h-ced').focus();
+      } catch (er) { toast(errText(er), true); b.disabled = false; }
+    };
+  };
+  $('#h-ced').focus();
+}
+
+let heladoMes = null;
+async function vHelados(box) {
+  const hoy = new Date(); heladoMes = heladoMes || { anio: hoy.getFullYear(), mes: hoy.getMonth() + 1 };
+  const st = heladoMes;
+  box.innerHTML = `<div class="row between wrap" style="gap:10px"><h1 style="font-size:30px;font-weight:800">Helados de cumpleaños</h1>
+    <div class="row" style="gap:8px"><button class="btn ghost sm" id="hm-a">‹</button><b id="hm-t" style="min-width:150px;text-align:center"></b><button class="btn ghost sm" id="hm-s">›</button><button class="btn ghost sm" id="hm-x">Descargar Excel</button></div></div>
+    <div id="hm" class="stack" style="margin-top:12px"><div class="empty">Cargando…</div></div>`;
+  $('#hm-t').textContent = `${MESES_L[st.mes - 1]} ${st.anio}`;
+  const mover = (k) => { let m = st.mes + k, a = st.anio; if (m < 1) { m = 12; a--; } if (m > 12) { m = 1; a++; } heladoMes = { anio: a, mes: m }; vHelados(box); };
+  $('#hm-a').onclick = () => mover(-1); $('#hm-s').onclick = () => mover(1);
+  let d; try { d = await rpc('admin_informe_helados', { p_anio: st.anio, p_mes: st.mes }); } catch (e) { $('#hm').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+  const dif = d.entregados - d.mes_anterior;
+  const kpi = (t, v, sub = '') => `<div class="card stack" style="gap:4px"><span class="small muted">${t}</span><b style="font-size:28px">${v}</b>${sub ? `<span class="small">${sub}</span>` : ''}</div>`;
+  $('#hm').innerHTML = `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
+      ${kpi('Helados entregados', num(d.entregados), `${dif === 0 ? 'Igual que' : dif > 0 ? '+' + num(dif) + ' vs' : num(dif) + ' vs'} el mes anterior (${num(d.mes_anterior)})`)}
+      ${kpi('Cumpleañeros inscritos', num(d.cumpleaneros), d.cumpleaneros ? `Reclamaron ${Math.round(d.entregados / d.cumpleaneros * 100)}%` : '')}
+      ${kpi('Ventas con descuento de cumpleaños', money(d.ventas), d.entregados ? `Promedio ${money(Math.round(d.ventas / d.entregados))} por factura` : '')}
+      ${kpi('Inversión en helados', d.costo_helado != null ? money(d.costo_helado * d.entregados) : '—', d.costo_helado != null ? `${money(d.costo_helado)} por helado` : 'Define el costo en Ajustes')}</div>
+    <section class="card"><h2 style="font-size:18px;font-weight:800;margin-bottom:8px">Por tienda donde compraron</h2>
+      ${d.por_tienda.length ? `<div class="tbl-wrap"><table><thead><tr><th>Tienda</th><th>Helados</th><th>Ventas</th></tr></thead><tbody>${d.por_tienda.map((t) => `<tr><td>${esc(t.tienda || '—')}</td><td>${num(t.helados)}</td><td>${money(t.ventas)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin entregas este mes.</div>'}</section>
+    <section class="card"><h2 style="font-size:18px;font-weight:800;margin-bottom:8px">Detalle</h2>
+      ${d.lista.length ? `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Cédula</th><th>Factura</th><th>Tienda</th><th>Valor</th><th>Entregó</th></tr></thead><tbody>${d.lista.map((x) => `<tr><td>${fdate(x.fecha)}</td><td>${esc(x.cliente)}</td><td>${esc(num(x.cedula))}</td><td>${esc(x.factura)}</td><td>${esc(x.tienda || '—')}</td><td>${money(x.valor)}</td><td>${esc(x.entregado_por)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin entregas este mes.</div>'}</section>`;
+  $('#hm-x').onclick = () => csv([['Fecha', 'Cliente', 'Cédula', 'Factura', 'Tienda de la compra', 'Valor compra', 'Entregó'], ...d.lista.map((x) => [(x.fecha || '').slice(0, 16).replace('T', ' '), x.cliente, x.cedula, x.factura, x.tienda, x.valor, x.entregado_por])], `helados-cumpleanos-${st.anio}-${String(st.mes).padStart(2, '0')}.csv`);
+}
+
 /* ---- Alertas de facturas repetidas (solo administrador) ---- */
 async function contarAlertas() {
   try {
@@ -1452,12 +1522,12 @@ async function vAlertas(box) {
   let list; try { list = await rpc('admin_alertas'); } catch (e) { $('#al-list').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
   const hora = (d) => new Date(d).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
   $('#al-list').innerHTML = list.map((a) => `<div class="card stack" style="gap:10px;${a.revisada ? 'opacity:.6' : 'border-color:var(--coral);background:#FFF5F3'}">
-    <div class="row between wrap" style="gap:8px"><b style="font-size:17px">${a.revisada ? 'Revisada' : 'Revisar factura'} ${esc(a.factura)}</b>
+    <div class="row between wrap" style="gap:8px"><b style="font-size:17px">${a.tipo === 'helado_repetido' ? (a.revisada ? 'Revisada: helado repetido' : 'Helado de cumpleaños repetido') : (a.revisada ? 'Revisada' : 'Revisar factura') + ' ' + esc(a.factura)}</b>
       <span class="pill ${a.revisada ? '' : 'sun'}">${fdate(a.creada_en)} · ${hora(a.creada_en)}</span></div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">
       <div class="stack" style="gap:2px"><span class="small muted">Cliente</span><b>${esc(a.cliente)}</b><span class="small">C.C. ${esc(num(a.cedula))}</span></div>
       <div class="stack" style="gap:2px"><span class="small muted">Intento repetido</span><b>${money(a.valor)} en ${esc(a.tienda || '—')}</b><span class="small">Por: ${esc(a.intento_por)}</span></div>
-      <div class="stack" style="gap:2px"><span class="small muted">Registro original</span><b>${money(a.original_valor)} en ${esc(a.original_tienda || '—')}</b><span class="small">${a.original_fecha ? fdate(a.original_fecha) + ' · ' + hora(a.original_fecha) : '—'} · Por: ${esc(a.original_por)} · +${num(a.original_puntos)} pts</span></div>
+      <div class="stack" style="gap:2px"><span class="small muted">Registro original</span><b>${money(a.original_valor)} en ${esc(a.original_tienda || '—')}</b><span class="small">${a.original_fecha ? fdate(a.original_fecha) + ' · ' + hora(a.original_fecha) : '—'} · Por: ${esc(a.original_por)}${a.tipo === 'helado_repetido' ? ' · Factura ' + esc(a.original_factura || '—') : ' · +' + num(a.original_puntos) + ' pts'}</span></div>
     </div>
     ${a.revisada ? '' : `<button class="btn coral sm" style="align-self:flex-start" data-rev="${a.id}">Marcar como revisada</button>`}
   </div>`).join('') || '<div class="card empty">No hay alertas. Todo en orden.</div>';
