@@ -283,15 +283,15 @@ async function clientInicio() {
     </section>
     ${stampCard(d, 'cliente')}
     <div class="card row between wrap" style="gap:10px"><div><span class="small muted">Tu tienda favorita</span><div style="font-weight:800;font-size:16px">${esc(d.tienda_favorita || 'Sin elegir')}</div><span class="small muted">Elige también de qué tiendas quieres recibir promociones.</span></div><button class="btn ghost sm" id="fav">Mis tiendas</button></div>
-    ${tarjetaPush()}
+    ${tarjetaPush(d.push_activo)}
     ${botonInstalar()}
     ${d.helado ? `<div class="card row" style="gap:14px;align-items:center;${d.helado.reclamado_en ? '' : 'border-color:var(--sun);background:#FFFBEA'}"><div style="font-size:38px">🍦</div><div class="stack" style="gap:2px"><b>${d.helado.reclamado_en ? 'Ya recibiste tu helado de cumpleaños' : '¡Feliz mes de cumpleaños! Tienes un helado de 2 bolas'}</b><span class="small">${d.helado.reclamado_en ? 'Lo reclamaste el ' + fdate(d.helado.reclamado_en) + '. ¡Que lo hayas disfrutado!' : 'Reclámalo en <b>Punto Dulce</b> durante este mes presentando la factura de tu compra con descuento de cumpleaños.'}</span></div></div>` : ''}
     ${pend ? `<section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Premios por reclamar</h2>${pend}</section>` : ''}
     <section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Últimos movimientos</h2>${mov}</section>
   </div>${tabbar('inicio')}</div>`;
   const rs = $('#redimir-sellos'); if (rs) rs.onclick = async () => { rs.disabled = true; try { await clientCall('cliente_solicitar', { p_premio: null }); toast('¡Listo! Muestra tu pantalla en caja para recibir tu regalo.'); clientInicio(); } catch (e) { toast(errText(e), true); rs.disabled = false; } };
-  activarPush(true).catch(() => {});
-  const pb = $('#push-on'); if (pb) pb.onclick = async () => { pb.disabled = true; try { const r = await activarPush(false); if (r === 'ok') { toast('¡Notificaciones activadas!'); const c = $('#push-card'); if (c) c.remove(); } else { toast(r === 'denied' ? 'No se activaron: las bloqueaste en el navegador.' : 'No se pudieron activar en este celular.', true); pb.disabled = false; } } catch (e) { toast('No se pudieron activar las notificaciones.', true); pb.disabled = false; } };
+  if (!d.push_activo) activarPush(true).then((r) => { if (r === 'ok') { cInicio = null; const c = $('#push-card'); if (c) c.remove(); } }).catch(() => {});
+  const pb = $('#push-on'); if (pb) pb.onclick = async () => { pb.disabled = true; try { const r = await activarPush(false); if (r === 'ok') { cInicio = null; toast('¡Notificaciones activadas!'); const c = $('#push-card'); if (c) c.remove(); } else { toast(r === 'denied' ? 'No se activaron: las bloqueaste en el navegador. Actívalas en Ajustes del sitio.' : r === 'error' ? 'Este celular no aceptó las notificaciones. Abre la app en Google Chrome actualizado e inténtalo de nuevo.' : 'No se pudieron activar en este celular.', true); pb.disabled = false; } } catch (e) { toast('No se pudieron activar las notificaciones.', true); pb.disabled = false; } };
   $('#fav').onclick = async () => {
     let pr; try { pr = await clientCall('cliente_inicio_prefs'); } catch (e) { return; }
     const promo = new Set(pr.promo || []);
@@ -1579,20 +1579,25 @@ async function vAlertas(box) {
 const soportaPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 function b64aUint8(b64) { const p = '='.repeat((4 - b64.length % 4) % 4); const r = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...r].map((c) => c.charCodeAt(0))); }
 async function activarPush(silencioso) {
-  if (!soportaPush() || !tok()) return 'no-soportado';
+  if (!tok()) return 'no-soportado';
+  const diag = (res) => { try { clientCall('cliente_diag_push', { p_navegador: navigator.userAgent, p_permiso: ('Notification' in window) ? Notification.permission : 'sin-api', p_resultado: res }).catch(() => {}); } catch {} };
+  if (!soportaPush()) { diag('no-soportado'); return 'no-soportado'; }
   if (esIOS() && !esStandalone()) return 'instalar-primero';
-  let perm = Notification.permission;
-  if (perm === 'default' && !silencioso) perm = await Notification.requestPermission();
-  if (perm !== 'granted') return perm;
-  const reg = await navigator.serviceWorker.ready;
-  let sub = await reg.pushManager.getSubscription();
-  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aUint8(CFG.vapidPublic) });
-  await rpc('cliente_guardar_push', { p_token: tok(), p_suscripcion: sub.toJSON() });
-  return 'ok';
+  try {
+    let perm = Notification.permission;
+    if (perm === 'default' && !silencioso) perm = await Notification.requestPermission();
+    if (perm !== 'granted') { if (!silencioso) diag('permiso:' + perm); return perm; }
+    const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(() => no(new Error('service worker no listo')), 10000))]);
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64aUint8(CFG.vapidPublic) });
+    await rpc('cliente_guardar_push', { p_token: tok(), p_suscripcion: sub.toJSON() });
+    diag('ok');
+    return 'ok';
+  } catch (e) { diag('error: ' + (e && (e.name + ' ' + e.message))); return 'error'; }
 }
-function tarjetaPush() {
+function tarjetaPush(activo) {
   if (!soportaPush() && !esIOS()) return '';
-  if (soportaPush() && Notification.permission === 'granted') return '';
+  if (activo) return '';
   const iosSinInstalar = esIOS() && !esStandalone();
   const negado = soportaPush() && Notification.permission === 'denied';
   return `<div class="card row between wrap" id="push-card" style="gap:10px;border-color:var(--yellow);background:#FFFBEA">
