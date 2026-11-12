@@ -866,7 +866,9 @@ async function vDashboard(box) {
   <div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Dashboard</h1>
   <div class="row wrap">${P.map(([k, l]) => `<button class="chip" data-per="${k}" aria-pressed="${dashState.per === k}">${l}</button>`).join('')}</div></div>
   <div class="row wrap" style="gap:8px"><button class="chip" data-ti="" aria-pressed="${!dashState.tienda}">TODAS</button>${tiendas.map((t) => `<button class="chip" data-ti="${t.id}" aria-pressed="${dashState.tienda === t.id}">${esc(t.nombre)}</button>`).join('')}</div>
-  <div id="dash"><div class="empty">Cargando…</div></div>`;
+  <div id="dash"><div class="empty">Cargando…</div></div>
+  <div id="cerca" style="margin-top:18px"></div>`;
+  cercaPremio($('#cerca'));
   $$('[data-per]').forEach((b) => b.onclick = () => { dashState.per = b.dataset.per; vDashboard(box); });
   $$('[data-ti]').forEach((b) => b.onclick = () => { dashState.tienda = b.dataset.ti ? Number(b.dataset.ti) : null; vDashboard(box); });
   const [d1, d2] = periodo(dashState.per);
@@ -998,6 +1000,37 @@ function dialog(inner, onOk, okLabel = 'Guardar') {
     catch (er) { toast(errText(er), true); b.disabled = false; }
   };
   const f = dl.querySelector('input,select,textarea'); if (f) f.focus();
+}
+
+/* ---- Clientes cerca de su próximo premio (solo admin) ---- */
+let cercaMax = 200000;
+async function cercaPremio(el) {
+  if (!el) return;
+  const OP = [100000, 200000, 300000, 500000];
+  el.innerHTML = `<section class="card stack" style="gap:12px">
+    <div class="row between wrap" style="gap:10px"><div><h2 style="font-size:20px;font-weight:800">Cerca de su próximo premio</h2>
+      <div class="small muted">Clientes a los que una compra pequeña les alcanza para su próximo premio.</div></div>
+      <div class="row wrap" style="gap:6px"><span class="small" style="font-weight:700">Les falta una compra de hasta</span>${OP.map((v) => `<button class="chip" data-cm="${v}" aria-pressed="${cercaMax === v}">${money(v)}</button>`).join('')}</div></div>
+    <div id="cp-body"><div class="empty">Cargando…</div></div></section>`;
+  $$('[data-cm]', el).forEach((b) => b.onclick = () => { cercaMax = +b.dataset.cm; cercaPremio(el); });
+  let list; try { list = await rpc('admin_cerca_premio', { p_max_compra: cercaMax }); } catch (e) { $('#cp-body').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+  const conPush = list.filter((x) => x.push).length;
+  const nombreP = (t) => t.charAt(0) + t.slice(1).toLowerCase();
+  $('#cp-body').innerHTML = list.length ? `
+    <div class="row between wrap" style="gap:10px;margin-bottom:10px"><b>${num(list.length)} cliente${list.length === 1 ? '' : 's'} · ${num(conPush)} con notificaciones activas</b>
+      <div class="row" style="gap:8px"><button class="btn ghost sm" id="cp-x">Descargar Excel</button><button class="btn coral sm" id="cp-env">Enviar mensaje a todos</button></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Cliente</th><th>Puntos</th><th>Próximo premio</th><th>Le faltan</th><th>Compra que lo logra</th><th>Tienda favorita</th><th>Push</th></tr></thead><tbody>
+    ${list.map((x) => `<tr><td><b>${esc(x.nombre)}</b><div class="small muted">C.C. ${esc(num(x.cedula))}</div></td><td>${num(x.puntos)}</td><td>${esc(nombreP(x.premio))}<div class="small muted">${num(x.premio_puntos)} pts</div></td><td><b style="color:var(--coral-t)">${num(x.faltan)} pts</b></td><td><b>${money(x.compra)}</b></td><td>${esc(x.favorita || '—')}</td><td>${x.push ? '✓' : '—'}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty">Nadie está a una compra de hasta ${money(cercaMax)} de su próximo premio.</div>`;
+  if (!list.length) return;
+  $('#cp-x').onclick = () => csv([['Cliente', 'Cédula', 'Celular', 'Puntos', 'Próximo premio', 'Puntos del premio', 'Le faltan', 'Compra que lo logra', 'Tienda favorita', 'Notificaciones'], ...list.map((x) => [x.nombre, x.cedula, x.celular, x.puntos, x.premio, x.premio_puntos, x.faltan, x.compra, x.favorita, x.push ? 'Sí' : 'No'])], `cerca-de-premio-${new Date().toISOString().slice(0, 10)}.csv`);
+  const ej = list[0];
+  $('#cp-env').onclick = () => dialog(`<h2 style="font-size:20px;font-weight:800">Enviar mensaje a ${num(list.length)} cliente${list.length === 1 ? '' : 's'}</h2>
+    <p class="small muted" style="margin:0">Cada uno recibe su mensaje con su nombre, su premio y la compra que le falta. Llega como notificación a quienes la tienen activa (${num(conPush)}) y a todos les queda en Mensajes.</p>
+    <div class="card" style="background:var(--cream)"><b>¡Estás muy cerca de tu ${esc(nombreP(ej.premio))}!</b><div class="small" style="margin-top:4px">${esc(ej.nombre.split(' ')[0])}, te faltan solo ${num(ej.faltan)} puntos para tu ${esc(nombreP(ej.premio))}. ¡Con una compra de ${money(ej.compra)} en cualquier tienda del mall lo logras! Te esperamos en Santana del Río.</div></div>`, async () => {
+    const r = await rpc('admin_enviar_cerca_premio', { p_max_compra: cercaMax });
+    toast(`Mensaje enviado a ${num(r.enviados)} clientes.`);
+  }, 'Enviar');
 }
 
 /* ---- Informe mensual por tienda (presupuesto de facturas) ---- */
