@@ -461,11 +461,11 @@ async function staffRoute(view) {
   if (p.rol === 'admin' && !(await adminVerificado())) return adminSegundoPaso();
   const isAdmin = p.rol === 'admin';
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
-  const adminOnly = ['helados', 'alertas', 'dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
+  const adminOnly = ['diario', 'helados', 'alertas', 'dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
   staffShell(view);
   const box = $('#content');
-  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas, helado: vHelado, helados: vHelados };
+  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas, helado: vHelado, helados: vHelados, diario: vDiario };
   Promise.resolve((views[view] || vAcumular)(box)).catch(() => {}).finally(() => { if (isAdmin) contarAlertas(); });
 }
 
@@ -543,7 +543,7 @@ function staffShell(view) {
   const isAdmin = perfil.rol === 'admin';
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
-    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('informe', 'chart', 'Informe mensual')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('helados', 'chart', 'Helados de cumpleaños')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}${L('helado', 'gift', 'Helado cumpleaños')}</nav>`
+    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('diario', 'chart', 'Informe diario')}${L('informe', 'chart', 'Informe mensual')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('helados', 'chart', 'Helados de cumpleaños')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}${L('helado', 'gift', 'Helado cumpleaños')}</nav>`
     : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}${tiendaNombre(perfil.tienda_id) === 'RESTAURANTE' ? L('helado', 'gift', 'Helado cumpleaños') : ''}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
@@ -1000,6 +1000,44 @@ function dialog(inner, onOk, okLabel = 'Guardar') {
     catch (er) { toast(errText(er), true); b.disabled = false; }
   };
   const f = dl.querySelector('input,select,textarea'); if (f) f.focus();
+}
+
+/* ---- Informe diario de puntos ---- */
+let diarioFecha = null;
+const hoyCO = () => new Date(Date.now() - 5 * 3600e3).toISOString().slice(0, 10);
+async function vDiario(box) {
+  diarioFecha = diarioFecha || hoyCO();
+  const f = diarioFecha, esHoy = f === hoyCO();
+  const mover = (k) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + k); const n = d.toISOString().slice(0, 10); if (n > hoyCO()) return; diarioFecha = n; vDiario(box); };
+  box.innerHTML = `<div class="row between wrap" style="gap:10px"><h1 style="font-size:30px;font-weight:800">Informe diario</h1>
+    <div class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" id="di-a" aria-label="Día anterior">‹</button>
+      <input class="input" type="date" id="di-f" value="${f}" max="${hoyCO()}" style="width:auto;height:44px">
+      <button class="btn ghost sm" id="di-s" aria-label="Día siguiente" ${esHoy ? 'disabled' : ''}>›</button>${esHoy ? '' : '<button class="btn ghost sm" id="di-h">Hoy</button>'}</div></div>
+    <div id="di" class="stack" style="margin-top:12px"><div class="empty">Cargando…</div></div>`;
+  $('#di-a').onclick = () => mover(-1); $('#di-s').onclick = () => mover(1);
+  $('#di-f').onchange = (e) => { if (e.target.value) { diarioFecha = e.target.value; vDiario(box); } };
+  if ($('#di-h')) $('#di-h').onclick = () => { diarioFecha = hoyCO(); vDiario(box); };
+  let d; try { d = await rpc('admin_informe_diario', { p_fecha: f }); } catch (e) { $('#di').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+  const dif = d.puntos - d.ayer_puntos;
+  const kpi = (t, v, sub = '', big = false) => `<div class="card stack" style="gap:4px;${big ? 'background:#13235B;color:#fff;border-color:#13235B' : ''}"><span class="small" style="${big ? 'color:#CFE9F0' : 'color:var(--muted)'}">${t}</span><b style="font-size:${big ? 38 : 28}px">${v}</b>${sub ? `<span class="small" style="${big ? 'color:#FFD23F' : ''}">${sub}</span>` : ''}</div>`;
+  const max = Math.max(1, ...d.serie.map((x) => x.puntos));
+  const dLabel = (iso) => new Date(iso + 'T12:00:00Z').toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', timeZone: 'UTC' });
+  $('#di').innerHTML = `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+      ${kpi('Puntos acumulados', num(d.puntos), `${dif === 0 ? 'Igual que' : (dif > 0 ? '+' : '') + num(dif) + ' vs'} el día anterior`, true)}
+      ${kpi('Compras registradas', num(d.compras), d.compras ? `${num(d.clientes)} cliente${d.clientes === 1 ? '' : 's'}` : '')}
+      ${kpi('Ventas registradas', money(d.ventas), d.compras ? `Promedio ${money(Math.round(d.ventas / d.compras))}` : '')}
+      ${kpi('Clientes nuevos', num(d.nuevos))}
+      ${kpi('Puntos redimidos', num(d.redimidos), `${num(d.premios)} premio${d.premios === 1 ? '' : 's'} entregado${d.premios === 1 ? '' : 's'}`)}
+      ${kpi('Sellos marcados', num(d.sellos))}</div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
+      <section class="card"><h2 style="font-size:18px;font-weight:800;margin-bottom:8px">Por tienda donde compraron</h2>
+        ${d.por_tienda.length ? `<div class="tbl-wrap"><table><thead><tr><th>Tienda</th><th>Compras</th><th>Ventas</th><th>Puntos</th></tr></thead><tbody>${d.por_tienda.map((x) => `<tr><td>${esc(x.tienda)}</td><td>${num(x.compras)}</td><td>${money(x.ventas)}</td><td><b>${num(x.puntos)}</b></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin compras registradas este día.</div>'}</section>
+      <section class="card"><h2 style="font-size:18px;font-weight:800;margin-bottom:8px">Por punto que registró</h2>
+        ${d.por_recaudador.length ? `<div class="tbl-wrap"><table><thead><tr><th>Punto</th><th>Compras</th><th>Puntos</th></tr></thead><tbody>${d.por_recaudador.map((x) => `<tr><td>${esc(x.punto)}</td><td>${num(x.compras)}</td><td><b>${num(x.puntos)}</b></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Sin registros este día.</div>'}</section></div>
+    <section class="card"><h2 style="font-size:18px;font-weight:800;margin-bottom:12px">Puntos acumulados · últimos 14 días</h2>
+      <div class="stack" style="gap:6px">${d.serie.map((x) => `<div class="row" style="gap:10px;align-items:center"><span class="small" style="width:70px;flex:0 0 auto;${x.dia === f ? 'font-weight:800' : ''}">${dLabel(x.dia)}</span>
+        <div style="flex:1;height:14px;background:#F1ECE0;border-radius:7px;overflow:hidden"><div style="height:100%;width:${Math.round(x.puntos / max * 100)}%;background:${x.dia === f ? 'var(--coral)' : '#1BA6C2'};border-radius:7px"></div></div>
+        <b class="small" style="width:80px;text-align:right;flex:0 0 auto">${num(x.puntos)}</b></div>`).join('')}</div></section>`;
 }
 
 /* ---- Clientes cerca de su próximo premio (solo admin) ---- */
