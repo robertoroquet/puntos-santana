@@ -58,6 +58,7 @@ const ERR = {
   NO_ES_SU_MES: 'Este no es el mes de cumpleaños del cliente.',
   HELADO_YA_ENTREGADO: 'Este cliente ya recibió su helado de cumpleaños este año.',
   SIN_CLIENTES_ELEGIDOS: 'Agrega al menos un cliente.',
+  FACTURA_MAS_DE_UN_MES: 'Esta factura tiene más de 1 mes. Solo se acumulan facturas de hasta 1 mes después de la compra.',
   SIN_CLAVE_UNICA: 'El cliente aún no ha generado su clave única. Pídele que toque "Generar clave única" en su celular.',
   CLAVE_UNICA_INCORRECTA: 'Clave única incorrecta. Revísala con el cliente.',
   CLAVE_UNICA_ANULADA: 'Demasiados intentos: la clave se anuló. El cliente debe generar una nueva.',
@@ -120,13 +121,13 @@ const SUN = '<svg class="sun" aria-hidden="true" viewBox="0 0 100 100"><circle c
 const POLITICAS = {
   datos: 'Mediante el registro de mis datos personales y mi información transaccional, autorizo al Hotel-Mall Santana del Rio y a Unión Cifuentes & Cia en general, para la recolección, almacenamiento y uso de los mismos con la finalidad de ofrecer servicios y campañas comerciales, ofertar servicios, participar en programas de beneficios, consultar en centrales de información para fines comerciales y de servicios de crédito, consultar hábitos de consumo y aficiones para ofertas, promociones, entre otros. Contactarlo para estudios de mercado y encuestas de satisfacción, gestionar tramites, compartir con empresas aliadas, asociados, sucursales, franquicias, filiales y subsidiarias. Como titular de su información tiene derecho a conocer, actualizar y rectificar sus datos personales.',
   terminos: [
-    'Solo se podrán acumular puntos el mismo día de la compra.',
+    'Los puntos se pueden acumular hasta 1 mes después de la fecha de la factura de compra, presentando la factura.',
     'La factura de compra debe estar a nombre de la persona que hace la acreditación de puntos y esta debe presentar un documento de identidad que la identifique; por ende, el vendedor no puede ir a acumular facturas del cliente, ni ningún familiar o amigo.',
     'Los puntos son personales e intransferibles.',
     'Los puntos vencen 1 año después de acumulados.',
-    'Los premios van variando según las directrices del establecimiento comercial. Estos también podrán ser redimidos para el pago de facturas de compra según la tasa de conversión definida por el comercio.',
+    'Los premios van variando según las directrices del establecimiento comercial.',
     'Cada $1.000 pesos en compra equivalen a 25 puntos acumulados.',
-    'Una vez hecha la redención de un premio, lo deben reclamar el mismo día.',
+    'Una vez el cliente activa la redención de un premio en la app, tiene 24 horas completas (corridas) para reclamarlo en el punto de entrega. Pasado ese tiempo la solicitud se vence y los puntos siguen en su cuenta.',
   ],
 };
 function politicasHTML() {
@@ -734,7 +735,7 @@ function vAcumular(box) {
         <h2 style="font-size:18px;font-weight:800">2. Datos de la factura</h2>
         <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
           <div class="field"><label for="f-num">Número de factura</label><input class="input" id="f-num" autocomplete="off" style="text-transform:uppercase" value="${esc(fnum)}"></div>
-          <div class="field"><label for="f-fecha">Fecha de la factura</label><input class="input" id="f-fecha" type="date" max="${iso(new Date())}" value="${esc(ffecha)}"></div>
+          <div class="field"><label for="f-fecha">Fecha de la factura</label><input class="input" id="f-fecha" type="date" max="${iso(new Date())}" min="${(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return iso(d); })()}" value="${esc(ffecha)}"></div>
         </div>
         <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
           <div class="field"><label for="f-nom">Nombre en la factura</label><input class="input" id="f-nom" autocomplete="off" value="${esc(fnom)}" placeholder="${esc(ficha.nombre)}"></div>
