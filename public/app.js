@@ -57,6 +57,7 @@ const ERR = {
   SIN_FECHA_NACIMIENTO: 'El cliente no tiene fecha de nacimiento registrada.',
   NO_ES_SU_MES: 'Este no es el mes de cumpleaños del cliente.',
   HELADO_YA_ENTREGADO: 'Este cliente ya recibió su helado de cumpleaños este año.',
+  SIN_CLIENTES_ELEGIDOS: 'Agrega al menos un cliente.',
   SIN_CLAVE_UNICA: 'El cliente aún no ha generado su clave única. Pídele que toque "Generar clave única" en su celular.',
   CLAVE_UNICA_INCORRECTA: 'Clave única incorrecta. Revísala con el cliente.',
   CLAVE_UNICA_ANULADA: 'Demasiados intentos: la clave se anuló. El cliente debe generar una nueva.',
@@ -1426,36 +1427,59 @@ async function vCupones(box) {
 
 async function vMensajes(box) {
   let pre = {}; try { pre = JSON.parse(sessionStorage.getItem('ps_msg_pre') || '{}'); sessionStorage.removeItem('ps_msg_pre'); } catch {}
-  const SEG = [['todos', 'Todos los clientes'], ['por_vencer', 'Puntos por vencer (30 días)'], ['casi_sellos', 'Les falta 1 sello o menos'], ['tienda', 'Compraron en una tienda'], ['inactivos', 'Sin compras en 60 días']];
+  const SEG = [['todos', 'Todos los clientes'], ['elegidos', 'Clientes que yo elija'], ['cerca', 'Recompra: les falta poco para un premio'], ['por_vencer', 'Puntos por vencer (30 días)'], ['casi_sellos', 'Les falta 1 sello o menos'], ['tienda', 'Compraron en una tienda'], ['inactivos', 'Sin compras en 60 días']];
   let seg = pre.seg || 'todos';
+  const elegidos = new Map(); // id -> cliente
   box.innerHTML = `<h1 style="font-size:30px;font-weight:800">Mensajes</h1>
   <div class="cols">
     <form class="card stack" id="mf" novalidate>
       <h2 style="font-size:20px;font-weight:800">Enviar mensaje</h2>
-      <div class="field"><label for="m-t">Título *</label><input class="input" id="m-t" maxlength="60" value="${esc(pre.titulo || '')}"></div>
-      <div class="field"><label for="m-c">Mensaje *</label><textarea class="input" id="m-c" rows="3" maxlength="300">${esc(pre.cuerpo || '')}</textarea></div>
+      <div class="field solo-normal"><label for="m-t">Título *</label><input class="input" id="m-t" maxlength="60" value="${esc(pre.titulo || '')}"></div>
+      <div class="field solo-normal"><label for="m-c">Mensaje *</label><textarea class="input" id="m-c" rows="3" maxlength="300">${esc(pre.cuerpo || '')}</textarea></div>
       <div class="stack" style="gap:8px"><span style="font-size:13px;font-weight:600">Enviar a</span><div class="row wrap" style="gap:8px" id="segs"></div>
-      <select class="input hidden" id="m-ti" aria-label="Tienda">${tiendas.map((t) => `<option>${esc(t.nombre)}</option>`).join('')}</select></div>
-      <div class="stack" style="gap:6px"><span class="small muted">Vista previa</span>
+      <select class="input hidden" id="m-ti" aria-label="Tienda">${tiendas.map((t) => `<option>${esc(t.nombre)}</option>`).join('')}</select>
+      <div class="stack hidden" id="eleg" style="gap:8px;background:#FBF7EE;border:1px solid var(--line);border-radius:16px;padding:12px">
+        <div class="row" style="gap:8px"><input class="input" id="e-q" placeholder="Busca por nombre, cédula o celular" autocomplete="off" style="flex:1"><button type="button" class="btn sm" id="e-b">Buscar</button></div>
+        <div id="e-res" class="stack" style="gap:6px"></div>
+        <div><span class="small" style="font-weight:700" id="e-n">Elegidos: 0</span><div class="row wrap" style="gap:6px;margin-top:6px" id="e-sel"></div></div>
+      </div></div>
+      <div class="hidden" id="cerca-box"></div>
+      <div class="stack solo-normal" style="gap:6px"><span class="small muted">Vista previa</span>
         <div style="background:var(--navy);border-radius:18px;padding:12px;display:flex;gap:10px;color:#fff;max-width:380px"><img src="${LOGO}" alt="" style="width:36px;height:36px;border-radius:9px;object-fit:cover"><div class="stack" style="gap:2px;min-width:0"><span class="small" style="color:#CFE9F0;font-weight:700">PUNTOS SANTANA · ahora</span><b style="font-size:13px" id="pv-t"></b><span class="small" style="color:#E3EAF7" id="pv-c"></span></div></div></div>
-      <button class="btn coral" style="align-self:flex-start">Enviar ahora</button>
+      <button class="btn coral solo-normal" style="align-self:flex-start">Enviar ahora</button>
     </form>
     <section class="card stack" id="hist"><h2 style="font-size:20px;font-weight:800">Enviados</h2><div class="empty">Cargando…</div></section>
   </div>`;
-  const drawSeg = () => { $('#segs').innerHTML = SEG.map(([k, l]) => `<button type="button" class="chip" data-seg="${k}" aria-pressed="${seg === k}">${l}</button>`).join(''); $('#m-ti').classList.toggle('hidden', seg !== 'tienda'); $$('[data-seg]').forEach((b) => b.onclick = () => { seg = b.dataset.seg; drawSeg(); }); };
+  const drawSeg = () => { $('#segs').innerHTML = SEG.map(([k, l]) => `<button type="button" class="chip" data-seg="${k}" aria-pressed="${seg === k}">${l}</button>`).join(''); $('#m-ti').classList.toggle('hidden', seg !== 'tienda'); $('#eleg').classList.toggle('hidden', seg !== 'elegidos'); const ce = seg === 'cerca'; $('#cerca-box').classList.toggle('hidden', !ce); $$('.solo-normal').forEach((x) => x.classList.toggle('hidden', ce)); if (ce && !$('#cerca-box').dataset.ok) { $('#cerca-box').dataset.ok = 1; cercaPremio($('#cerca-box')); } $$('[data-seg]').forEach((b) => b.onclick = () => { seg = b.dataset.seg; drawSeg(); }); };
   const pv = () => { $('#pv-t').textContent = $('#m-t').value || 'Título del mensaje'; $('#pv-c').textContent = $('#m-c').value || 'Texto del mensaje'; };
+  const drawSel = () => {
+    $('#e-n').textContent = `Elegidos: ${elegidos.size}`;
+    $('#e-sel').innerHTML = [...elegidos.values()].map((c) => `<span class="pill navy" style="padding:5px 6px 5px 12px;display:inline-flex;align-items:center;gap:6px">${esc(c.nombre)}<button type="button" data-quita="${c.id}" aria-label="Quitar ${esc(c.nombre)}" style="background:rgba(255,255,255,.2);border:0;color:#fff;border-radius:50%;width:20px;height:20px;cursor:pointer;line-height:1">×</button></span>`).join('') || '<span class="small muted">Busca un cliente y toca "Agregar".</span>';
+    $$('[data-quita]').forEach((b) => b.onclick = () => { elegidos.delete(b.dataset.quita); drawSel(); buscarE(true); });
+  };
+  let ultRes = [];
+  const buscarE = async (soloPintar) => {
+    const q = $('#e-q').value.trim();
+    if (!soloPintar) { if (!q) { $('#e-res').innerHTML = ''; ultRes = []; return; } try { ultRes = await rpc('admin_clientes', { p_busqueda: q, p_limite: 20 }); } catch (er) { return toast(errText(er), true); } }
+    $('#e-res').innerHTML = ultRes.length ? ultRes.map((c) => `<div class="row between" style="gap:8px;background:#fff;border-radius:12px;padding:8px 10px"><div style="min-width:0"><b>${esc(c.nombre)}</b><div class="small muted">C.C. ${esc(num(c.cedula))}${c.activo ? '' : ' · sin activar (aún no tiene la app)'}</div></div>${!c.activo ? '<span class="small muted">No recibe</span>' : elegidos.has(c.id) ? '<span class="small" style="font-weight:700;color:var(--teal-d)">✓ Agregado</span>' : `<button type="button" class="btn ghost sm" data-agrega="${c.id}">Agregar</button>`}</div>`).join('') : (q ? '<span class="small muted">Sin resultados.</span>' : '');
+    $$('[data-agrega]').forEach((b) => b.onclick = () => { const c = ultRes.find((x) => x.id === b.dataset.agrega); if (c) elegidos.set(c.id, c); drawSel(); buscarE(true); });
+  };
   drawSeg(); pv(); $('#m-t').oninput = pv; $('#m-c').oninput = pv;
+  $('#e-b').onclick = () => buscarE();
+  $('#e-q').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); buscarE(); } };
+  drawSel();
   $('#mf').onsubmit = async (e) => {
     e.preventDefault();
     const t = $('#m-t').value.trim(), c = $('#m-c').value.trim();
     if (!t || !c) return toast('Escribe el título y el mensaje.', true);
+    if (seg === 'elegidos' && !elegidos.size) return toast('Agrega al menos un cliente.', true);
     if (!confirm('¿Enviar este mensaje?')) return;
     const b = $('button[type=submit],button:not([type])', $('#mf')); b.disabled = true;
-    try { const r = await rpc('admin_enviar_mensaje', { p_titulo: t, p_cuerpo: c, p_segmento: seg, p_tienda: seg === 'tienda' ? $('#m-ti').value : null }); toast(`Mensaje enviado a ${num(r.destinatarios)} clientes.`); vMensajes(box); }
+    try { const r = await rpc('admin_enviar_mensaje', { p_titulo: t, p_cuerpo: c, p_segmento: seg, p_tienda: seg === 'tienda' ? $('#m-ti').value : null, p_clientes: seg === 'elegidos' ? [...elegidos.keys()] : null }); toast(`Mensaje enviado a ${num(r.destinatarios)} clientes.`); vMensajes(box); }
     catch (er) { toast(errText(er), true); b.disabled = false; }
   };
   const { data, error } = await sb.from('mensajes').select('id,titulo,cuerpo,segmento,segmento_tienda,enviado_en,mensajes_destinatarios(count)').order('enviado_en', { ascending: false }).limit(50);
-  const segName = { ...Object.fromEntries(SEG), cumpleanos: 'Cumpleaños del mes' };
+  const segName = { ...Object.fromEntries(SEG), cumpleanos: 'Cumpleaños del mes', cerca_premio: 'Recompra (cerca de un premio)', elegidos: 'Clientes elegidos' };
   $('#hist').innerHTML = '<h2 style="font-size:20px;font-weight:800">Enviados</h2>' + (error ? `<div class="empty">${errText(error)}</div>` : (data.map((m) => `<div style="border-top:1px solid var(--line);padding-top:10px" class="stack" ><div class="row between" style="gap:8px;align-items:flex-start"><b>${esc(m.titulo)}</b><span class="small muted" style="flex:0 0 auto">${fdate(m.enviado_en)}</span></div><span class="small muted">${esc(m.cuerpo)}</span><span class="small">${esc(segName[m.segmento] || m.segmento)}${m.segmento_tienda ? ': ' + esc(m.segmento_tienda) : ''} · ${num(m.mensajes_destinatarios?.[0]?.count || 0)} clientes</span></div>`).join('') || '<div class="empty">Aún no has enviado mensajes.</div>'));
 }
 
