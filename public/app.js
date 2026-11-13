@@ -454,6 +454,7 @@ async function loadStaff() {
 }
 const tiendaNombre = (id) => (tiendas.find((t) => t.id === id) || {}).nombre || '';
 
+let mantenerFicha = false;
 async function staffRoute(view) {
   document.title = 'Puntos Santana · Personal';
   const p = await loadStaff();
@@ -463,6 +464,9 @@ async function staffRoute(view) {
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
   const adminOnly = ['diario', 'helados', 'alertas', 'dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
+  // Cada pantalla empieza en blanco (sin la cédula del cliente anterior), salvo justo después de inscribir o activar
+  if (!mantenerFicha) ficha = null;
+  mantenerFicha = false;
   staffShell(view);
   const box = $('#content');
   const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas, helado: vHelado, helados: vHelados, diario: vDiario };
@@ -617,13 +621,13 @@ document.addEventListener('submit', async (e) => {
   try {
     ficha = await rpc('activar_cliente', { p_cedula: ficha.cedula, p_celular: v('a-cel'), p_correo: v('a-mail'), p_pin: v('a-pin'), p_acepta: true, p_nacimiento: v('a-nac') || null, p_tienda_favorita: Number(v('a-fav')), p_promo_tiendas: Array.from(f.querySelectorAll('input[name="a-promo"]:checked')).map((i) => Number(i.value)) });
     toast('Cuenta activada. Ya puede entrar a la app con su cédula y PIN.');
-    route();
+    mantenerFicha = true; route();
   } catch (er) { toast(errText(er), true); b.disabled = false; }
 });
 function searchBox(onFound) {
   return {
     html: `<form class="row wrap" id="sf" style="align-items:flex-end" novalidate>
-      <div class="field" style="flex:1;min-width:220px"><label for="sced">Cédula del cliente</label><input class="input" id="sced" inputmode="numeric" value="${ficha ? esc(ficha.cedula) : ''}"></div>
+      <div class="field" style="flex:1;min-width:220px"><label for="sced">Cédula del cliente</label><input class="input" id="sced" inputmode="numeric" autocomplete="off" value="${ficha ? esc(ficha.cedula) : ''}"></div>
       <button class="btn">Buscar</button></form><div id="sres"></div>`,
     bind() {
       $('#sf').onsubmit = async (e) => {
@@ -675,7 +679,7 @@ function vNuevo(box) {
     try {
       ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true, p_nacimiento: v('n-nac'), p_tienda_favorita: Number(v('n-fav')), p_promo_tiendas: $$('input[name="n-promo"]:checked').map((i) => Number(i.value)) });
       toast('Cliente inscrito. Ya puedes acumular su compra.');
-      location.hash = '#/personal/acumular';
+      mantenerFicha = true; location.hash = '#/personal/acumular';
     } catch (er) { err.textContent = errText(er); b.disabled = false; }
   };
 }
@@ -1732,4 +1736,14 @@ if ('serviceWorker' in navigator) {
   });
 }
 route();
+})();
+
+// Si la cajera deja un cliente en pantalla 3 minutos sin tocar nada, se borra (privacidad en caja)
+(() => {
+  let ultimo = Date.now();
+  ['click', 'keydown', 'input', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => { ultimo = Date.now(); }, { passive: true, capture: true }));
+  setInterval(() => {
+    if (!ficha || !location.hash.startsWith('#/personal') || document.querySelector('dialog[open]')) return;
+    if (Date.now() - ultimo > 3 * 60 * 1000) { ficha = null; ultimo = Date.now(); route(); }
+  }, 20000);
 })();
