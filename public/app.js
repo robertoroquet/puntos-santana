@@ -115,6 +115,31 @@ const ICON = {
 const ic = (n, size = 22, w = 2) => `<svg aria-hidden="true" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
 const SUN = '<svg class="sun" aria-hidden="true" viewBox="0 0 100 100"><circle cx="50" cy="50" r="22" fill="#F6A21E"/><g stroke="#EB5440" stroke-width="7" stroke-linecap="round"><path d="M50 8v12M50 80v12M8 50h12M80 50h12M20 20l8 8M72 72l8 8M80 20l-8 8M28 72l-8 8"/></g></svg>';
 
+
+/* ---------- Términos y condiciones · Autorización de datos ---------- */
+const POLITICAS = {
+  datos: 'Mediante el registro de mis datos personales y mi información transaccional, autorizo al Hotel-Mall Santana del Rio y a Unión Cifuentes & Cia en general, para la recolección, almacenamiento y uso de los mismos con la finalidad de ofrecer servicios y campañas comerciales, ofertar servicios, participar en programas de beneficios, consultar en centrales de información para fines comerciales y de servicios de crédito, consultar hábitos de consumo y aficiones para ofertas, promociones, entre otros. Contactarlo para estudios de mercado y encuestas de satisfacción, gestionar tramites, compartir con empresas aliadas, asociados, sucursales, franquicias, filiales y subsidiarias. Como titular de su información tiene derecho a conocer, actualizar y rectificar sus datos personales.',
+  terminos: [
+    'Solo se podrán acumular puntos el mismo día de la compra.',
+    'La factura de compra debe estar a nombre de la persona que hace la acreditación de puntos y esta debe presentar un documento de identidad que la identifique; por ende, el vendedor no puede ir a acumular facturas del cliente, ni ningún familiar o amigo.',
+    'Los puntos son personales e intransferibles.',
+    'Los puntos vencen 1 año después de acumulados.',
+    'Los premios van variando según las directrices del establecimiento comercial. Estos también podrán ser redimidos para el pago de facturas de compra según la tasa de conversión definida por el comercio.',
+    'Cada $1.000 pesos en compra equivalen a 25 puntos acumulados.',
+    'Una vez hecha la redención de un premio, lo deben reclamar el mismo día.',
+  ],
+};
+function politicasHTML() {
+  return `<div class="stack" style="gap:14px;text-align:left">
+    <section class="stack" style="gap:8px"><h2 style="font-size:18px;font-weight:800;margin:0">Términos y condiciones</h2>
+      <ul style="margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px;line-height:1.45">${POLITICAS.terminos.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>
+    <section class="stack" style="gap:8px"><h2 style="font-size:18px;font-weight:800;margin:0">Autorización para la utilización de los datos personales y para compartir información</h2>
+      <p style="margin:0;font-size:14px;line-height:1.5">${esc(POLITICAS.datos)}</p></section></div>`;
+}
+function verPoliticas() { dialog(`<div style="max-height:65vh;overflow:auto;padding-right:4px">${politicasHTML()}</div>`, async () => {}, 'Entendido'); const d = document.querySelector('dialog:last-of-type [data-x]'); if (d) d.remove(); }
+document.addEventListener('click', (e) => { const a = e.target.closest('[data-politicas]'); if (!a) return; e.preventDefault(); verPoliticas(); });
+const AUTORIZA = 'El cliente leyó y acepta los <a href="#" data-politicas style="font-weight:700">Términos y condiciones y la Autorización de datos personales</a> de Puntos Santana (Ley 1581 de 2012), y acepta recibir notificaciones y mensajes con promociones en la app.';
+
 /* ---------- router ---------- */
 function route() {
   const h = location.hash.replace(/^#/, '') || '/';
@@ -180,7 +205,7 @@ function clientLogin() {
       <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
       <button class="btn coral block" style="height:56px;font-size:17px">Entrar</button>
       ${botonInstalar()}
-      <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos, Derek o el Restaurante con tu cédula.</p>
+      <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos, Derek o el Restaurante con tu cédula.</p><p class="center small" style="margin:6px 0 0"><a href="#" data-politicas style="color:#fff;font-weight:700">Términos y condiciones · Tratamiento de datos</a></p>
     </form>
   </div>`;
   $('#ced').focus();
@@ -289,6 +314,7 @@ async function clientInicio() {
     ${d.helado ? `<div class="card row" style="gap:14px;align-items:center;${d.helado.reclamado_en ? '' : 'border-color:var(--sun);background:#FFFBEA'}"><div style="font-size:38px">🍦</div><div class="stack" style="gap:2px"><b>${d.helado.reclamado_en ? 'Ya recibiste tu helado de cumpleaños' : '¡Feliz mes de cumpleaños! Tienes un helado de 2 bolas'}</b><span class="small">${d.helado.reclamado_en ? 'Lo reclamaste el ' + fdate(d.helado.reclamado_en) + '. ¡Que lo hayas disfrutado!' : 'Reclámalo en <b>Punto Dulce</b> durante este mes presentando la factura de tu compra con descuento de cumpleaños.'}</span></div></div>` : ''}
     ${pend ? `<section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Premios por reclamar</h2>${pend}</section>` : ''}
     <section class="stack" style="gap:10px"><h2 style="font-size:16px;font-weight:800">Últimos movimientos</h2>${mov}</section>
+    <p class="center small" style="margin:4px 0 0"><a href="#" data-politicas style="font-weight:700">Términos y condiciones · Tratamiento de datos</a></p>
   </div>${tabbar('inicio')}</div>`;
   const rs = $('#redimir-sellos'); if (rs) rs.onclick = async () => { rs.disabled = true; try { await clientCall('cliente_solicitar', { p_premio: null }); toast('¡Listo! Muestra tu pantalla en caja para recibir tu regalo.'); clientInicio(); } catch (e) { toast(errText(e), true); rs.disabled = false; } };
   if (!d.push_activo) activarPush(true).then((r) => { if (r === 'ok') { cInicio = null; const c = $('#push-card'); if (c) c.remove(); } }).catch(() => {});
@@ -580,7 +606,7 @@ function clientBar(f) {
       <div class="field"><label for="a-pin2">Repetir PIN *</label><input class="input pin" id="a-pin2" type="password" inputmode="numeric" maxlength="4"></div>
     </div>
     <fieldset class="promo-set"><legend>¿De qué tiendas quiere recibir promociones? <span class="muted">(puede elegir varias)</span></legend><div class="chipchks">${tiendas.map((t) => `<label class="chipchk"><input type="checkbox" name="a-promo" value="${t.id}"><span>${esc(t.nombre)}</span></label>`).join('')}</div></fieldset>
-    <label class="check"><input type="checkbox" id="a-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012) y acepta recibir notificaciones push y mensajes con promociones en la app.</span></label>
+    <label class="check"><input type="checkbox" id="a-ok"><span>${AUTORIZA}</span></label>
     <button class="btn coral" style="align-self:flex-start">Activar cuenta</button>
   </form>`;
   return `<div class="card client-bar">
@@ -660,7 +686,7 @@ function vNuevo(box) {
       <div class="field"><label for="n-fav">Tienda favorita *</label><select class="input" id="n-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
     </div>
     <fieldset class="promo-set"><legend>¿De qué tiendas quiere recibir promociones? <span class="muted">(puede elegir varias)</span></legend><div class="chipchks">${tiendas.map((t) => `<label class="chipchk"><input type="checkbox" name="n-promo" value="${t.id}"><span>${esc(t.nombre)}</span></label>`).join('')}</div></fieldset>
-    <label class="check"><input type="checkbox" id="n-ok"><span>El cliente autoriza a Santana del Río Mall Comercial el tratamiento de sus datos personales para el programa Puntos Santana (Ley 1581 de 2012) y acepta recibir notificaciones push y mensajes con promociones en la app.</span></label>
+    <label class="check"><input type="checkbox" id="n-ok"><span>${AUTORIZA}</span></label>
     <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
     <button class="btn coral" style="align-self:flex-start">Inscribir cliente</button>
   </form>`;
