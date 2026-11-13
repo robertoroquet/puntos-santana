@@ -1253,20 +1253,35 @@ function fechaExcel(v) {
 function importarClientes(despues) {
   let filas = [];
   dialog(`<h2 style="font-size:20px;font-weight:800">Importar clientes desde Excel</h2>
-    <p class="muted small" style="margin:0">El archivo debe tener columnas con estos títulos: <b>Nombre</b>, <b>Cédula</b> y <b>Fecha de nacimiento</b> (día/mes/año). Si una cédula ya existe, no se duplica.</p>
+    <p class="muted small" style="margin:0">Columnas que se leen: <b>Nombres</b> y <b>Apellidos</b> (o Nombre), <b>Cédula</b> (si falta, se usa el Número de tarjeta), <b>Fecha de nacimiento</b>, <b>Teléfono</b>, <b>Correo</b> y <b>Saldo / Puntos</b>. Los puntos se redondean y vencen en 1 año. Si una cédula ya existe no se duplica ni se le suman puntos otra vez.</p>
     <div class="field"><label for="i-f">Archivo (.xlsx, .xls o .csv)</label><input class="input" id="i-f" type="file" accept=".xlsx,.xls,.csv" style="padding:12px"></div>
     <div id="i-prev" class="small"></div>`, async (dl) => {
     if (!filas.length) { toast('Primero elige un archivo con clientes.', true); return false; }
-    let nuevos = 0, act = 0, errores = [];
+    const prev = dl.querySelector('#i-prev');
+    let R = { nuevos: 0, actualizados: 0, existentes: 0, con_saldo: 0, puntos: 0 }, errores = [];
     for (let i = 0; i < filas.length; i += 500) {
+      prev.innerHTML = `<b>Cargando… ${num(Math.min(i + 500, filas.length))} de ${num(filas.length)}</b>`;
       const r = await rpc('admin_importar_clientes', { p_filas: filas.slice(i, i + 500) });
-      nuevos += r.nuevos; act += r.actualizados; errores = errores.concat(r.errores || []);
+      for (const k in R) R[k] += Number(r[k] || 0);
+      errores = errores.concat(r.errores || []);
     }
-    toast(`Importados: ${num(nuevos)} nuevos, ${num(act)} actualizados${errores.length ? `, ${errores.length} filas con error` : ''}.`);
-    if (errores.length) setTimeout(() => alertaErrores(errores), 400);
+    dialog(`<h2 style="font-size:20px;font-weight:800">Importación terminada</h2>
+      <div class="vbox">
+        <div class="vrow"><span>Clientes nuevos cargados</span><b class="vbig">${num(R.nuevos)}</b></div>
+        <div class="vrow"><span>Con saldo de puntos</span><b>${num(R.con_saldo)}</b></div>
+        <div class="vrow"><span>Puntos cargados</span><b>${num(R.puntos)}</b></div>
+        <div class="vrow"><span>Ya existían (se completaron datos vacíos)</span><b>${num(R.actualizados)}</b></div>
+        <div class="vrow"><span>Ya existían (sin cambios)</span><b>${num(R.existentes)}</b></div>
+        <div class="vrow"><span>Filas no cargadas</span><b>${num(errores.length)}</b></div>
+      </div>${errores.length ? `<div class="tbl-wrap" style="max-height:200px;overflow:auto"><table><thead><tr><th>Fila</th><th>Motivo</th></tr></thead><tbody>${errores.slice(0, 300).map((e) => `<tr><td>${e.fila}</td><td>${esc(e.motivo)}</td></tr>`).join('')}</tbody></table></div>` : ''}`, async () => {}, 'Entendido');
+    const d = document.querySelector('dialog:last-of-type [data-x]'); if (d) d.remove();
     despues && despues();
   }, 'Importar');
   const inp = document.querySelector('dialog #i-f'), prev = document.querySelector('dialog #i-prev');
+  const MIN = new Set(['de', 'del', 'la', 'las', 'los', 'y']);
+  const titulo = (t) => t.replace(/\d+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase().split(' ').map((w, i) => (i > 0 && MIN.has(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const celular = (v) => { let d = String(v ?? '').replace(/\.0$/, '').replace(/\D/g, ''); if (d.length === 12 && d.startsWith('57')) d = d.slice(2); return /^3\d{9}$/.test(d) ? d : ''; };
+  const digitos = (v) => String(v ?? '').trim().replace(/\.0$/, '').replace(/\D/g, '');
   inp.onchange = async () => {
     const file = inp.files[0]; if (!file) return;
     prev.textContent = 'Leyendo archivo…';
@@ -1276,15 +1291,27 @@ function importarClientes(despues) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true });
       if (!raw.length) { prev.textContent = 'El archivo está vacío.'; return; }
-      const keys = Object.keys(raw[0]);
-      const kNom = keys.find((k) => /nombre|cliente/.test(normH(k)));
-      const kCed = keys.find((k) => /cedula|documento|identificacion|^cc$|^id$/.test(normH(k)));
-      const kNac = keys.find((k) => /nacimiento|cumple|fechanac/.test(normH(k)));
-      if (!kNom || !kCed) { prev.innerHTML = `<span style="color:var(--coral-t)">No encontré las columnas de nombre y cédula. Columnas del archivo: ${esc(keys.join(', '))}</span>`; filas = []; return; }
-      filas = raw.map((r, i) => ({ fila: i + 2, nombre: String(r[kNom] || '').trim(), cedula: String(r[kCed] || '').replace(/\D/g, ''), nacimiento: kNac ? fechaExcel(r[kNac]) : '' })).filter((r) => r.nombre || r.cedula);
-      const conNac = filas.filter((r) => r.nacimiento).length;
-      prev.innerHTML = `<div class="stack" style="gap:8px"><b>${num(filas.length)} clientes listos para importar</b><span class="muted">Columnas: ${esc(kNom)} · ${esc(kCed)}${kNac ? ' · ' + esc(kNac) : ' · (sin columna de nacimiento)'} — ${num(conNac)} con fecha de nacimiento.</span>
-        <div class="tbl-wrap" style="max-height:180px;overflow:auto"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th></tr></thead><tbody>${filas.slice(0, 8).map((r) => `<tr><td>${esc(r.nombre)}</td><td>${esc(r.cedula)}</td><td>${r.nacimiento ? fdate(r.nacimiento) : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+      const keys = Object.keys(raw[0]); const N = (k) => normH(k);
+      const kNoms = keys.find((k) => /^nombres?$/.test(N(k))) || keys.find((k) => /nombre/.test(N(k)));
+      const kApe = keys.find((k) => /apellido/.test(N(k)));
+      const kCed = keys.find((k) => /^(cedula|documento|identificacion|cc|numerodedocumento)$/.test(N(k))) || keys.find((k) => /cedula|documento/.test(N(k)));
+      const kTar = keys.find((k) => /tarjeta/.test(N(k)));
+      const kNac = keys.find((k) => /nacimiento|cumple|fechanac/.test(N(k)));
+      const kTels = keys.filter((k) => /telefono|celular|movil/.test(N(k)));
+      const kMail = keys.find((k) => /correo|email|mail/.test(N(k)));
+      const kPts = keys.find((k) => /saldo|puntos/.test(N(k)));
+      if (!kNoms || !(kCed || kTar)) { prev.innerHTML = `<span style="color:var(--coral-t)">No encontré las columnas de nombre y cédula. Columnas del archivo: ${esc(keys.join(', '))}</span>`; filas = []; return; }
+      filas = raw.map((r, i) => {
+        let nac = kNac ? fechaExcel(r[kNac]) : '';
+        if (!/^(19\d\d|20(0\d|1[0-2]))-\d\d-\d\d$/.test(nac)) nac = ''; // fechas imposibles o de menores: vacías
+        const pts = kPts ? Math.max(0, Math.round(Number(String(r[kPts]).replace(',', '.')) || 0)) : 0;
+        return { fila: i + 2, nombre: titulo(String(r[kNoms] || '') + ' ' + (kApe ? String(r[kApe] || '') : '')), cedula: digitos(kCed ? r[kCed] : '') || digitos(kTar ? r[kTar] : ''),
+          nacimiento: nac, celular: kTels.map((k) => celular(r[k])).find(Boolean) || '', correo: kMail ? String(r[kMail] || '').trim() : '', puntos: pts };
+      }).filter((r) => r.nombre || r.cedula);
+      const conPts = filas.filter((r) => r.puntos > 0), total = conPts.reduce((a, r) => a + r.puntos, 0);
+      prev.innerHTML = `<div class="stack" style="gap:8px"><b>${num(filas.length)} clientes listos para importar</b>
+        <span class="muted">${num(conPts.length)} con puntos · ${num(total)} puntos en total · ${num(filas.filter((r) => r.nacimiento).length)} con fecha de nacimiento · ${num(filas.filter((r) => r.celular).length)} con celular</span>
+        <div class="tbl-wrap" style="max-height:180px;overflow:auto"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th><th>Celular</th><th style="text-align:right">Puntos</th></tr></thead><tbody>${filas.slice(0, 8).map((r) => `<tr><td>${esc(r.nombre)}</td><td>${esc(r.cedula)}</td><td>${r.nacimiento ? fdate(r.nacimiento) : '—'}</td><td>${esc(r.celular || '—')}</td><td style="text-align:right">${num(r.puntos)}</td></tr>`).join('')}</tbody></table></div></div>`;
     } catch (er) { prev.innerHTML = `<span style="color:var(--coral-t)">${esc(er.message || 'No se pudo leer el archivo.')}</span>`; filas = []; }
   };
 }
