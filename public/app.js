@@ -497,12 +497,13 @@ async function staffRoute(view) {
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
   const adminOnly = ['diario', 'helados', 'alertas', 'dashboard', 'informe', 'clientes', 'transacciones', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
+  if (view === 'mis' && !verMisMovs()) view = 'acumular';
   // Cada pantalla empieza en blanco (sin la cédula del cliente anterior), salvo justo después de inscribir o activar
   if (!mantenerFicha) ficha = null;
   mantenerFicha = false;
   staffShell(view);
   const box = $('#content');
-  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, transacciones: vTransacciones, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas, helado: vHelado, helados: vHelados, diario: vDiario };
+  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, transacciones: vTransacciones, mis: vMisMovs, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas, helado: vHelado, helados: vHelados, diario: vDiario };
   Promise.resolve((views[view] || vAcumular)(box)).catch(() => {}).finally(() => { if (isAdmin) contarAlertas(); });
 }
 
@@ -581,7 +582,7 @@ function staffShell(view) {
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
     ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('diario', 'chart', 'Informe diario')}${L('informe', 'chart', 'Informe mensual')}${L('transacciones', 'chart', 'Transacciones')}${L('clientes', 'users', 'Clientes')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('helados', 'chart', 'Helados de cumpleaños')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}${L('helado', 'gift', 'Helado cumpleaños')}</nav>`
-    : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}${tiendaNombre(perfil.tienda_id) === 'RESTAURANTE' ? L('helado', 'gift', 'Helado cumpleaños') : ''}</nav>`;
+    : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}${tiendaNombre(perfil.tienda_id) === 'RESTAURANTE' ? L('helado', 'gift', 'Helado cumpleaños') : ''}${verMisMovs() ? L('mis', 'chart', 'Transacciones') : ''}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
   <div class="staff">
@@ -943,7 +944,41 @@ function csv(rows, name) {
 }
 
 let selCliente = null;
-let buscarCliente = null; // {id, cedula} cuando se llega desde Transacciones
+let buscarCliente = null;
+// Cajas que ven sus propias transacciones (por ahora Pilatos y Derek)
+const verMisMovs = () => perfil && perfil.rol !== 'admin' && ['PILATOS', 'DEREK'].includes(tiendaNombre(perfil.tienda_id));
+async function vMisMovs(box) {
+  const hoyS = iso(new Date()), min = (() => { const d = new Date(); d.setDate(d.getDate() - 31); return iso(d); })();
+  box.innerHTML = `
+  <h1 style="font-size:30px;font-weight:800">Transacciones de esta caja</h1>
+  <p class="muted" style="margin:0">Lo que se registró en ${esc(tiendaNombre(perfil.tienda_id))}: acumulaciones, premios entregados, clientes nuevos y clientes activados.</p>
+  <div class="card row wrap" style="gap:10px;align-items:flex-end">
+    <div class="field" style="margin:0"><label for="m-d">Desde</label><input class="input" type="date" id="m-d" value="${hoyS}" min="${min}" max="${hoyS}"></div>
+    <div class="field" style="margin:0"><label for="m-h">Hasta</label><input class="input" type="date" id="m-h" value="${hoyS}" min="${min}" max="${hoyS}"></div>
+    <button class="btn" id="m-v">Ver</button>
+    <div class="row wrap" style="gap:8px">${[['Hoy', 0], ['Ayer', 1], ['7 días', 7]].map(([l, n]) => `<button type="button" class="chip" data-r="${n}">${l}</button>`).join('')}</div>
+  </div>
+  <div id="m-k"></div><section class="card stack" id="m-l"><div class="empty">Cargando…</div></section>`;
+  const TIPO = { acumulacion: ['Acumuló', '#D5F0EA', '#0F7A63'], redencion: ['Premio entregado', '#FCD9D2', '#B8382A'], nuevo: ['Cliente nuevo', '#E0E7FF', '#13235B'], activado: ['Cliente activado', '#FFE7A8', '#7A5A00'] };
+  const ver = async () => {
+    $('#m-l').innerHTML = '<div class="empty">Cargando…</div>';
+    let m; try { m = await rpc('recaudador_movimientos', { p_desde: $('#m-d').value || null, p_hasta: $('#m-h').value || null }); } catch (e) { $('#m-l').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+    const ac = m.filter((t) => t.tipo === 'acumulacion' && !t.anulada);
+    const K = (l, v, c) => `<div class="kpi"><div class="dot" style="background:${c}"></div><span>${l}</span><b>${v}</b></div>`;
+    $('#m-k').innerHTML = `<div class="kpis">${K('Acumulaciones', num(ac.length), 'var(--navy)')}${K('Valor registrado', money(ac.reduce((a, t) => a + Number(t.valor_compra || 0), 0)), 'var(--coral)')}${K('Premios entregados', num(m.filter((t) => t.tipo === 'redencion').length), 'var(--sun)')}${K('Clientes nuevos / activados', num(m.filter((t) => t.tipo === 'nuevo' || t.tipo === 'activado').length), 'var(--teal)')}</div>`;
+    $('#m-l').innerHTML = `<h2 style="font-size:17px;font-weight:800">${num(m.length)} movimiento${m.length === 1 ? '' : 's'}</h2>
+      <div class="tbl-wrap"><table><thead><tr><th>Fecha y hora</th><th>Cliente</th><th>Qué se hizo</th><th>Detalle</th><th style="text-align:right">Puntos</th></tr></thead><tbody>
+      ${m.map((t) => { const [tx, bg, fg] = TIPO[t.tipo] || [t.tipo, '#eee', '#333']; return `<tr class="${t.anulada ? 'tag-anulada' : ''}"><td style="white-space:nowrap">${fdate(t.fecha)}<div class="small muted">${new Date(t.fecha).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</div></td>
+        <td><b>${esc(t.nombre)}</b><div class="small muted">C.C. ${esc(num(t.cedula))}</div></td>
+        <td><span class="pill" style="background:${bg};color:${fg};padding:3px 10px;font-size:11px;font-weight:800">${tx}${t.anulada ? ' · anulada' : ''}</span></td>
+        <td class="small">${t.tipo === 'acumulacion' ? `Compra en <b>${esc(t.tienda || '—')}</b> · ${money(t.valor_compra)}<div class="muted">Factura N° ${esc(t.factura_numero || '—')}${t.factura_fecha ? ' · ' + fdate(t.factura_fecha) : ''}</div>` : t.tipo === 'redencion' ? esc((t.detalle || '').replace(/^Premio:\s*/i, '')) : esc(t.detalle || '')}</td>
+        <td style="text-align:right;font-weight:800;color:${(t.puntos || 0) < 0 ? 'var(--coral-t)' : 'var(--teal-d)'}">${t.puntos == null ? '—' : (t.puntos > 0 ? '+' : '') + num(t.puntos)}</td></tr>`; }).join('') || '<tr><td colspan="5" class="empty">No hay movimientos en esas fechas.</td></tr>'}
+      </tbody></table></div>`;
+  };
+  $('#m-v').onclick = ver;
+  $$('[data-r]').forEach((b) => b.onclick = () => { const n = +b.dataset.r, d = new Date(), h = new Date(); if (n === 1) { d.setDate(d.getDate() - 1); h.setDate(h.getDate() - 1); } else if (n > 1) d.setDate(d.getDate() - (n - 1)); $('#m-d').value = iso(d); $('#m-h').value = iso(h); ver(); });
+  ver();
+} // {id, cedula} cuando se llega desde Transacciones
 
 async function vTransacciones(box) {
   const hoyS = iso(new Date());
