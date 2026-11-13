@@ -908,12 +908,28 @@ function csv(rows, name) {
 }
 
 let selCliente = null;
+// Qué hizo el cliente en cada movimiento
+function accion(t) {
+  if (t.anulada) return { txt: 'Anulada', bg: '#E5E7EB', fg: '#4B5563' };
+  if (t.tipo === 'redencion') return { txt: 'Redimió', bg: '#FCD9D2', fg: '#B8382A' };
+  if (t.tipo === 'ajuste') return t.factura_numero === 'SALDO-INICIAL' ? { txt: 'Saldo inicial', bg: '#FFE7A8', fg: '#7A5A00' } : { txt: 'Ajuste de puntos', bg: '#E0E7FF', fg: '#13235B' };
+  return { txt: 'Acumuló', bg: '#D5F0EA', fg: '#0F7A63' };
+}
+const pillAccion = (t) => { const a = accion(t); return `<span class="pill" style="background:${a.bg};color:${a.fg};padding:3px 10px;font-size:11px;font-weight:800">${a.txt}</span>`; };
+function queMovio(t) {
+  if (t.tipo === 'redencion') return (t.detalle || 'Premio').replace(/^Premio:\s*/i, '');
+  if (t.tipo === 'ajuste') return t.factura_numero === 'SALDO-INICIAL' ? 'Puntos traídos de la base del mall' : (t.detalle || 'Ajuste manual');
+  return 'Compra en ' + (t.tienda || '—');
+}
+
 async function vClientes(box) {
   box.innerHTML = `
   <div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Clientes y transacciones</h1>
   <div class="row wrap"><button class="btn coral sm" id="imp">Importar clientes (Excel)</button><button class="btn ghost sm" id="x-cli">Exportar clientes</button><button class="btn ghost sm" id="x-tx">Exportar transacciones</button></div></div>
   <form class="row wrap" id="qf" novalidate><label for="q" class="hidden">Buscar</label><input class="input" id="q" placeholder="Buscar por cédula, nombre o celular" style="flex:1;min-width:240px"><button class="btn">Buscar</button></form>
-  <div class="cols"><section class="card stack" id="lista"><div class="empty">Cargando…</div></section><section id="det"></section></div>`;
+  <div class="cols"><section class="card stack" id="lista"><div class="empty">Cargando…</div></section><section id="det"></section></div>
+  <section class="card stack" id="movs" style="margin-top:20px"><div class="empty">Cargando movimientos…</div></section>`;
+  movimientos();
   const load = async (q) => {
     let rows; try { rows = await rpc('admin_clientes', { p_busqueda: q || '', p_limite: 200 }); } catch (e) { $('#lista').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
     $('#lista').innerHTML = `<h2 style="font-size:17px;font-weight:800">Clientes (${rows.length}${rows.length === 200 ? '+' : ''})</h2>` + (rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th><th>Favorita · promociones</th><th style="text-align:right">Puntos</th><th style="text-align:right">Sellos</th></tr></thead><tbody>
@@ -933,6 +949,19 @@ async function vClientes(box) {
     if (error) return toast(errText(error), true);
     csv([['Fecha registro', 'Tipo', 'Cédula', 'Cliente', 'Tienda compra', 'Registrado en', 'N° factura', 'Fecha factura', 'Nombre en factura', 'Valor', 'Puntos', 'Puntos vigentes', 'Vence', 'Anulada', 'Detalle'], ...data.map((t) => [(t.fecha || '').slice(0, 16).replace('T', ' '), t.tipo, t.clientes?.cedula, t.clientes?.nombre, t.tienda?.nombre, t.recaudador?.nombre, t.factura_numero, t.factura_fecha, t.factura_nombre, t.valor_compra, t.puntos, t.puntos_restantes, t.vence_en, t.anulada ? 'Sí' : 'No', t.detalle])], 'transacciones-puntos-santana.csv');
   };
+  async function movimientos() {
+    const el = $('#movs'); if (!el) return;
+    let m; try { m = await rpc('admin_movimientos', { p_limite: 100 }); } catch (e) { el.innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+    el.innerHTML = `<h2 style="font-size:17px;font-weight:800">Movimientos de todos los clientes <span class="small muted" style="font-weight:600">(últimos ${m.length})</span></h2>
+      <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Acción</th><th>Detalle</th><th>Registrado en</th><th style="text-align:right">Puntos</th></tr></thead><tbody>
+      ${m.map((t) => `<tr class="clic ${t.anulada ? 'tag-anulada' : ''}" data-mc="${t.cliente_id}" tabindex="0"><td style="white-space:nowrap">${fdate(t.fecha)}<div class="small muted">${new Date(t.fecha).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</div></td>
+        <td><b>${esc(t.nombre)}</b><div class="small muted">C.C. ${esc(num(t.cedula))}</div></td><td>${pillAccion(t)}</td>
+        <td>${esc(queMovio(t))}${t.valor_compra ? `<div class="small muted">${money(t.valor_compra)}${t.factura_numero ? ' · Factura ' + esc(t.factura_numero) : ''}</div>` : ''}</td>
+        <td>${esc(t.registrada_en || (t.tipo === 'ajuste' ? 'Administrador' : '—'))}</td>
+        <td style="text-align:right;font-weight:800;color:${t.puntos < 0 ? 'var(--coral-t)' : 'var(--teal-d)'}">${t.puntos > 0 ? '+' : ''}${num(t.puntos)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aún no hay movimientos.</td></tr>'}
+      </tbody></table></div><p class="small muted" style="margin:0">Toca una fila para ver la ficha de ese cliente.</p>`;
+    $$('[data-mc]').forEach((tr) => tr.onclick = () => { const r = $(`[data-c="${tr.dataset.mc}"]`); if (r) { r.click(); r.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
+  }
   async function detalle(c) {
     const det = $('#det');
     det.innerHTML = '<div class="card empty">Cargando…</div>';
@@ -941,8 +970,8 @@ async function vClientes(box) {
       <div class="row between wrap"><div><b style="font-size:18px">${esc(c.nombre)}</b><div class="small muted">C.C. ${esc(num(c.cedula))} · ${esc(c.celular)}${c.correo ? ' · ' + esc(c.correo) : ''}${c.tienda_registro ? ' · inscrito en ' + esc(c.tienda_registro) : ''}</div></div>
       <span class="pill navy" style="padding:6px 14px">${num(c.puntos)} pts · ${c.sellos}/${config.sellos_meta || 8} sellos</span></div>
       <div class="row wrap"><button class="btn ghost sm" id="ed-cli">Editar datos</button><button class="btn ghost sm" id="rs-pin">Restablecer PIN</button></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Fecha factura</th><th>Movimiento</th><th>Valor</th><th>Puntos</th><th>Vence</th><th></th></tr></thead><tbody>
-      ${tx.map((t) => `<tr class="${t.anulada ? 'tag-anulada' : ''}"><td>${fdate(t.factura_fecha || t.fecha)}</td><td><b>${esc(t.tipo === 'redencion' ? (t.detalle || 'Redención') : t.tienda)}</b>${t.factura_numero ? `<div class="small muted">Factura ${esc(t.factura_numero)} · ${esc(t.factura_nombre || '')}${t.factura_cedula ? ' · C.C. ' + esc(num(t.factura_cedula)) : ''}</div>` : ''}${t.cliente_recurrente === true ? '<div class="small" style="font-weight:600">Cliente recurrente</div>' : t.cliente_recurrente === false ? '<div class="small" style="font-weight:600;color:var(--coral-t)">Cliente nuevo en la tienda</div>' : ''}${t.con_sello ? ' · sello' : ''}${t.registrada_en ? `<div class="small muted">en ${esc(t.registrada_en)}</div>` : ''}${t.ediciones ? `<div class="small muted">editada ${t.ediciones}×</div>` : ''}</td>
+      <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Acción</th><th>Valor</th><th>Puntos</th><th>Vence</th><th></th></tr></thead><tbody>
+      ${tx.map((t) => `<tr class="${t.anulada ? 'tag-anulada' : ''}"><td>${fdate(t.factura_fecha || t.fecha)}</td><td>${pillAccion(t)}<div style="margin-top:4px"><b>${esc(queMovio(t))}</b></div>${t.factura_numero && t.tipo === 'acumulacion' ? `<div class="small muted">Factura ${esc(t.factura_numero)} · ${esc(t.factura_nombre || '')}${t.factura_cedula ? ' · C.C. ' + esc(num(t.factura_cedula)) : ''}</div>` : ''}${t.cliente_recurrente === true ? '<div class="small" style="font-weight:600">Cliente recurrente</div>' : t.cliente_recurrente === false ? '<div class="small" style="font-weight:600;color:var(--coral-t)">Cliente nuevo en la tienda</div>' : ''}${t.con_sello ? ' · sello' : ''}${t.registrada_en ? `<div class="small muted">en ${esc(t.registrada_en)}</div>` : ''}${t.ediciones ? `<div class="small muted">editada ${t.ediciones}×</div>` : ''}</td>
         <td>${t.valor_compra ? money(t.valor_compra) : '—'}</td><td style="font-weight:800;color:${t.puntos < 0 ? 'var(--coral-t)' : 'var(--teal-d)'}">${t.puntos > 0 ? '+' : ''}${num(t.puntos)}</td><td>${t.vence_en ? fdate(t.vence_en) : '—'}</td>
         <td style="white-space:nowrap;text-align:right">${t.tipo === 'acumulacion' && !t.anulada ? `<button class="btn ghost sm" data-ed="${t.id}">Editar</button> <button class="btn ghost sm" data-an="${t.id}">Anular</button>` : (t.anulada ? '<span class="small">Anulada</span>' : '')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin movimientos.</td></tr>'}
       </tbody></table></div>
