@@ -495,14 +495,14 @@ async function staffRoute(view) {
   if (p.rol === 'admin' && !(await adminVerificado())) return adminSegundoPaso();
   const isAdmin = p.rol === 'admin';
   if (!view) view = isAdmin ? 'dashboard' : 'acumular';
-  const adminOnly = ['diario', 'helados', 'alertas', 'dashboard', 'informe', 'clientes', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
+  const adminOnly = ['diario', 'helados', 'alertas', 'dashboard', 'informe', 'clientes', 'transacciones', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
   // Cada pantalla empieza en blanco (sin la cédula del cliente anterior), salvo justo después de inscribir o activar
   if (!mantenerFicha) ficha = null;
   mantenerFicha = false;
   staffShell(view);
   const box = $('#content');
-  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas, helado: vHelado, helados: vHelados, diario: vDiario };
+  const views = { acumular: vAcumular, nuevo: vNuevo, redimir: vRedimir, sellos: vSellos, dashboard: vDashboard, informe: vInforme, clientes: vClientes, transacciones: vTransacciones, cumpleanos: vCumple, premios: vPremios, cupones: vCupones, mensajes: vMensajes, ajustes: vAjustes, alertas: vAlertas, helado: vHelado, helados: vHelados, diario: vDiario };
   Promise.resolve((views[view] || vAcumular)(box)).catch(() => {}).finally(() => { if (isAdmin) contarAlertas(); });
 }
 
@@ -580,7 +580,7 @@ function staffShell(view) {
   const isAdmin = perfil.rol === 'admin';
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
-    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('diario', 'chart', 'Informe diario')}${L('informe', 'chart', 'Informe mensual')}${L('clientes', 'users', 'Clientes y transacciones')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('helados', 'chart', 'Helados de cumpleaños')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}${L('helado', 'gift', 'Helado cumpleaños')}</nav>`
+    ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('diario', 'chart', 'Informe diario')}${L('informe', 'chart', 'Informe mensual')}${L('transacciones', 'chart', 'Transacciones')}${L('clientes', 'users', 'Clientes')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('helados', 'chart', 'Helados de cumpleaños')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}${L('helado', 'gift', 'Helado cumpleaños')}</nav>`
     : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}${tiendaNombre(perfil.tienda_id) === 'RESTAURANTE' ? L('helado', 'gift', 'Helado cumpleaños') : ''}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
@@ -943,6 +943,50 @@ function csv(rows, name) {
 }
 
 let selCliente = null;
+let buscarCliente = null; // {id, cedula} cuando se llega desde Transacciones
+
+async function vTransacciones(box) {
+  const hoyS = iso(new Date());
+  box.innerHTML = `
+  <div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Transacciones</h1><button class="btn ghost sm" id="t-x">Exportar (Excel)</button></div>
+  <form class="card row wrap" id="tf" style="gap:10px;align-items:flex-end" novalidate>
+    <div class="field" style="margin:0"><label for="t-d">Desde</label><input class="input" type="date" id="t-d" value="${hoyS}" max="${hoyS}"></div>
+    <div class="field" style="margin:0"><label for="t-h">Hasta</label><input class="input" type="date" id="t-h" value="${hoyS}" max="${hoyS}"></div>
+    <div class="field" style="margin:0"><label for="t-t">Tipo</label><select class="input" id="t-t"><option value="">Todas</option><option value="acumulacion">Acumulaciones</option><option value="redencion">Redenciones</option><option value="ajuste">Ajustes de puntos</option><option value="saldo_inicial">Saldos iniciales (base)</option></select></div>
+    <div class="field" style="margin:0;flex:1;min-width:200px"><label for="t-q">Cédula, nombre o N° factura</label><input class="input" id="t-q" placeholder="Opcional"></div>
+    <button class="btn">Ver</button>
+  </form>
+  <div class="row wrap" style="gap:8px" id="t-rap">${[['Hoy', 0], ['Ayer', 1], ['7 días', 7], ['30 días', 30]].map(([l, n]) => `<button type="button" class="chip" data-r="${n}">${l}</button>`).join('')}</div>
+  <div id="t-kpi"></div>
+  <section class="card stack" id="t-list"><div class="empty">Cargando…</div></section>`;
+  let ult = [];
+  const ver = async () => {
+    const d = $('#t-d').value || null, h = $('#t-h').value || null;
+    $('#t-list').innerHTML = '<div class="empty">Cargando…</div>';
+    try { ult = await rpc('admin_movimientos', { p_desde: d, p_hasta: h, p_tipo: $('#t-t').value || null, p_busqueda: $('#t-q').value.trim() || null, p_limite: 2000 }); } catch (e) { $('#t-list').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
+    const ac = ult.filter((t) => t.tipo === 'acumulacion' && !t.anulada), rd = ult.filter((t) => t.tipo === 'redencion');
+    const K = (l, v, c) => `<div class="kpi"><div class="dot" style="background:${c}"></div><span>${l}</span><b>${v}</b></div>`;
+    $('#t-kpi').innerHTML = `<div class="kpis">${K('Acumulaciones', num(ac.length), 'var(--navy)')}${K('Ventas registradas', money(ac.reduce((a, t) => a + Number(t.valor_compra || 0), 0)), 'var(--coral)')}${K('Puntos entregados', num(ac.reduce((a, t) => a + t.puntos, 0)), 'var(--teal)')}${K('Redenciones', num(rd.length), 'var(--sun)')}</div>`;
+    $('#t-list').innerHTML = `<h2 style="font-size:17px;font-weight:800">${num(ult.length)} movimiento${ult.length === 1 ? '' : 's'}${ult.length === 2000 ? ' (máximo; acorta las fechas)' : ''}</h2>
+      <div class="tbl-wrap"><table><thead><tr><th>Fecha y hora</th><th>Cliente</th><th>Acción</th><th>Detalle</th><th>Factura</th><th>Registrado en</th><th style="text-align:right">Puntos</th></tr></thead><tbody>
+      ${ult.map((t) => `<tr class="clic ${t.anulada ? 'tag-anulada' : ''}" data-mc="${t.cliente_id}" data-ced="${esc(t.cedula)}" tabindex="0"><td style="white-space:nowrap">${fdate(t.fecha)}<div class="small muted">${new Date(t.fecha).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</div></td>
+        <td><b>${esc(t.nombre)}</b><div class="small muted">C.C. ${esc(num(t.cedula))}</div></td><td>${pillAccion(t)}</td>
+        <td>${esc(queMovio(t))}${t.valor_compra ? `<div class="small muted">${money(t.valor_compra)}</div>` : ''}</td>
+        <td class="small">${t.tipo === 'acumulacion' ? `N° <b>${esc(t.factura_numero || '—')}</b>${t.factura_fecha ? ' · ' + fdate(t.factura_fecha) : ''}<div class="muted">${esc(t.factura_cedula ? 'C.C. ' + num(t.factura_cedula) : (t.factura_nombre || ''))}</div>` : '—'}</td>
+        <td>${esc(t.registrada_en || (t.tipo === 'ajuste' ? 'Administrador' : '—'))}</td>
+        <td style="text-align:right;font-weight:800;color:${t.puntos < 0 ? 'var(--coral-t)' : 'var(--teal-d)'}">${t.puntos > 0 ? '+' : ''}${num(t.puntos)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No hay movimientos con esos filtros.</td></tr>'}
+      </tbody></table></div><p class="small muted" style="margin:0">Toca una fila para abrir la ficha del cliente.</p>`;
+    $$('[data-mc]').forEach((tr) => { const go = () => { buscarCliente = { id: tr.dataset.mc, cedula: tr.dataset.ced }; location.hash = '#/personal/clientes'; }; tr.onclick = go; tr.onkeydown = (e) => { if (e.key === 'Enter') go(); }; });
+  };
+  $('#tf').onsubmit = (e) => { e.preventDefault(); ver(); };
+  $$('#t-rap [data-r]').forEach((b) => b.onclick = () => { const n = +b.dataset.r, d = new Date(); const h = new Date(); if (n === 1) { d.setDate(d.getDate() - 1); h.setDate(h.getDate() - 1); } else if (n > 1) d.setDate(d.getDate() - (n - 1)); $('#t-d').value = iso(d); $('#t-h').value = iso(h); ver(); });
+  $('#t-x').onclick = () => {
+    if (!ult.length) return toast('No hay movimientos para exportar.', true);
+    csv([['Fecha', 'Hora', 'Acción', 'Cédula', 'Cliente', 'Detalle', 'Tienda compra', 'Valor', 'N° factura', 'Fecha factura', 'Nombre/cédula en factura', 'Registrado en', 'Puntos', 'Anulada'],
+      ...ult.map((t) => [iso(new Date(t.fecha)), new Date(t.fecha).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }), accion(t).txt, t.cedula, t.nombre, queMovio(t), t.tienda, t.valor_compra, t.factura_numero, t.factura_fecha, t.factura_cedula || t.factura_nombre, t.registrada_en, t.puntos, t.anulada ? 'Sí' : 'No'])], `transacciones-${$('#t-d').value}-a-${$('#t-h').value}.csv`);
+  };
+  ver();
+}
 // Qué hizo el cliente en cada movimiento
 function accion(t) {
   if (t.anulada) return { txt: 'Anulada', bg: '#E5E7EB', fg: '#4B5563' };
@@ -959,12 +1003,10 @@ function queMovio(t) {
 
 async function vClientes(box) {
   box.innerHTML = `
-  <div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Clientes y transacciones</h1>
-  <div class="row wrap"><button class="btn coral sm" id="imp">Importar clientes (Excel)</button><button class="btn ghost sm" id="x-cli">Exportar clientes</button><button class="btn ghost sm" id="x-tx">Exportar transacciones</button></div></div>
+  <div class="row between wrap"><h1 style="font-size:30px;font-weight:800">Clientes</h1>
+  <div class="row wrap"><button class="btn coral sm" id="imp">Importar clientes (Excel)</button><button class="btn ghost sm" id="x-cli">Exportar clientes</button></div></div>
   <form class="row wrap" id="qf" novalidate><label for="q" class="hidden">Buscar</label><input class="input" id="q" placeholder="Buscar por cédula, nombre o celular" style="flex:1;min-width:240px"><button class="btn">Buscar</button></form>
-  <div class="cols"><section class="card stack" id="lista"><div class="empty">Cargando…</div></section><section id="det"></section></div>
-  <section class="card stack" id="movs" style="margin-top:20px"><div class="empty">Cargando movimientos…</div></section>`;
-  movimientos();
+  <div class="cols"><section class="card stack" id="lista"><div class="empty">Cargando…</div></section><section id="det"></section></div>`;
   const load = async (q) => {
     let rows; try { rows = await rpc('admin_clientes', { p_busqueda: q || '', p_limite: 200 }); } catch (e) { $('#lista').innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
     $('#lista').innerHTML = `<h2 style="font-size:17px;font-weight:800">Clientes (${rows.length}${rows.length === 200 ? '+' : ''})</h2>` + (rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Cédula</th><th>Nacimiento</th><th>Favorita · promociones</th><th style="text-align:right">Puntos</th><th style="text-align:right">Sellos</th></tr></thead><tbody>
@@ -979,23 +1021,11 @@ async function vClientes(box) {
       csv([['Cédula', 'Nombre', 'Fecha nacimiento', 'Celular', 'Correo', 'Activo', 'Tienda favorita', 'Recibe promociones de', 'Puntos', 'Sellos', 'Inscrito en', 'Fecha inscripción'], ...rows.map((c) => [c.cedula, c.nombre, c.fecha_nacimiento, c.celular, c.correo, c.activo ? 'Sí' : 'No', c.tienda_favorita, c.promo_tiendas, c.puntos, c.sellos, c.tienda_registro, (c.creado_en || '').slice(0, 10)])], 'clientes-puntos-santana.csv');
     } catch (e) { toast(errText(e), true); }
   };
-  $('#x-tx').onclick = async () => {
+  if (buscarCliente) { const b = buscarCliente; buscarCliente = null; $('#q').value = b.cedula; selCliente = b.id; load(b.cedula); } else load('');
+  async function exportarTxViejo() {
     const { data, error } = await sb.from('transacciones').select('fecha,tipo,factura_numero,factura_fecha,factura_nombre,valor_compra,puntos,puntos_restantes,vence_en,anulada,detalle,clientes(cedula,nombre),tienda:tiendas!transacciones_tienda_id_fkey(nombre),recaudador:tiendas!transacciones_recaudador_tienda_id_fkey(nombre)').order('fecha', { ascending: false }).limit(100000);
     if (error) return toast(errText(error), true);
     csv([['Fecha registro', 'Tipo', 'Cédula', 'Cliente', 'Tienda compra', 'Registrado en', 'N° factura', 'Fecha factura', 'Nombre en factura', 'Valor', 'Puntos', 'Puntos vigentes', 'Vence', 'Anulada', 'Detalle'], ...data.map((t) => [(t.fecha || '').slice(0, 16).replace('T', ' '), t.tipo, t.clientes?.cedula, t.clientes?.nombre, t.tienda?.nombre, t.recaudador?.nombre, t.factura_numero, t.factura_fecha, t.factura_nombre, t.valor_compra, t.puntos, t.puntos_restantes, t.vence_en, t.anulada ? 'Sí' : 'No', t.detalle])], 'transacciones-puntos-santana.csv');
-  };
-  async function movimientos() {
-    const el = $('#movs'); if (!el) return;
-    let m; try { m = await rpc('admin_movimientos', { p_limite: 100 }); } catch (e) { el.innerHTML = `<div class="empty">${errText(e)}</div>`; return; }
-    el.innerHTML = `<h2 style="font-size:17px;font-weight:800">Movimientos de todos los clientes <span class="small muted" style="font-weight:600">(últimos ${m.length})</span></h2>
-      <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Acción</th><th>Detalle</th><th>Registrado en</th><th style="text-align:right">Puntos</th></tr></thead><tbody>
-      ${m.map((t) => `<tr class="clic ${t.anulada ? 'tag-anulada' : ''}" data-mc="${t.cliente_id}" tabindex="0"><td style="white-space:nowrap">${fdate(t.fecha)}<div class="small muted">${new Date(t.fecha).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</div></td>
-        <td><b>${esc(t.nombre)}</b><div class="small muted">C.C. ${esc(num(t.cedula))}</div></td><td>${pillAccion(t)}</td>
-        <td>${esc(queMovio(t))}${t.valor_compra ? `<div class="small muted">${money(t.valor_compra)}${t.factura_numero ? ' · Factura ' + esc(t.factura_numero) : ''}</div>` : ''}</td>
-        <td>${esc(t.registrada_en || (t.tipo === 'ajuste' ? 'Administrador' : '—'))}</td>
-        <td style="text-align:right;font-weight:800;color:${t.puntos < 0 ? 'var(--coral-t)' : 'var(--teal-d)'}">${t.puntos > 0 ? '+' : ''}${num(t.puntos)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Aún no hay movimientos.</td></tr>'}
-      </tbody></table></div><p class="small muted" style="margin:0">Toca una fila para ver la ficha de ese cliente.</p>`;
-    $$('[data-mc]').forEach((tr) => tr.onclick = () => { const r = $(`[data-c="${tr.dataset.mc}"]`); if (r) { r.click(); r.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
   }
   async function detalle(c) {
     const det = $('#det');
@@ -1058,7 +1088,6 @@ async function vClientes(box) {
       if (error) throw error; toast('Datos actualizados.'); load($('#q').value.trim());
     });
   }
-  load('');
 }
 
 function dialog(inner, onOk, okLabel = 'Guardar') {
