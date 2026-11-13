@@ -206,10 +206,12 @@ function clientLogin() {
       <p id="err" class="small" style="color:var(--coral-t);margin:0;min-height:18px"></p>
       <button class="btn coral block" style="height:56px;font-size:17px">Entrar</button>
       ${botonInstalar()}
+      ${tarjetaNotifLogin()}
       <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos, Derek o el Restaurante con tu cédula.</p><p class="center small" style="margin:6px 0 0"><a href="#" data-politicas style="color:#fff;font-weight:700">Términos y condiciones · Tratamiento de datos</a></p>
     </form>
   </div>`;
-  $('#ced').focus();
+  const bn = $('#notif-login'); if (bn) bn.onclick = async () => { try { const r = await Notification.requestPermission(); if (r === 'granted') { $('#notif-card').outerHTML = '<div class="card" style="background:#E7F7F1;border-color:#0F7A63;padding:12px 14px;position:relative;z-index:1"><b style="color:#0F7A63">✓ Notificaciones activadas.</b> <span class="small">Ahora entra con tu cédula y tu PIN.</span></div>'; $('#ced').focus(); } else toast('No se activaron. Puedes activarlas luego desde Inicio.', true); } catch { toast('Este celular no permite notificaciones.', true); } };
+  if (!bn) $('#ced').focus();
   $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const b = $('button', $('#f')); b.disabled = true; $('#err').textContent = '';
@@ -649,6 +651,7 @@ document.addEventListener('submit', async (e) => {
   try {
     ficha = await rpc('activar_cliente', { p_cedula: ficha.cedula, p_celular: v('a-cel'), p_correo: v('a-mail'), p_pin: v('a-pin'), p_acepta: true, p_nacimiento: v('a-nac') || null, p_tienda_favorita: Number(v('a-fav')), p_promo_tiendas: Array.from(f.querySelectorAll('input[name="a-promo"]:checked')).map((i) => Number(i.value)) });
     toast('Cuenta activada. Ya puede entrar a la app con su cédula y PIN.');
+    mostrarQRCliente();
     mantenerFicha = true; route();
   } catch (er) { toast(errText(er), true); b.disabled = false; }
 });
@@ -707,6 +710,7 @@ function vNuevo(box) {
     try {
       ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true, p_nacimiento: v('n-nac'), p_tienda_favorita: Number(v('n-fav')), p_promo_tiendas: $$('input[name="n-promo"]:checked').map((i) => Number(i.value)) });
       toast('Cliente inscrito. Ya puedes acumular su compra.');
+      mostrarQRCliente();
       mantenerFicha = true; location.hash = '#/personal/acumular';
     } catch (er) { err.textContent = errText(er); b.disabled = false; }
   };
@@ -1793,6 +1797,26 @@ async function activarPush(silencioso) {
     diag('ok');
     return 'ok';
   } catch (e) { diag('error: ' + (e && (e.name + ' ' + e.message))); return 'error'; }
+}
+// En la pantalla de ingreso (app ya instalada): pedir el permiso de notificaciones antes de entrar
+function tarjetaNotifLogin() {
+  if (!soportaPush() || !esStandalone() || Notification.permission !== 'default') return '';
+  return `<div class="card stack" id="notif-card" style="gap:8px;border-color:var(--yellow);background:#FFFBEA;padding:14px;position:relative;z-index:1">
+    <b>Antes de entrar: activa las notificaciones</b><span class="small muted">Así te llegan tus promociones, cupones y avisos de puntos.</span>
+    <button type="button" class="btn coral" id="notif-login">🔔 Activar notificaciones</button></div>`;
+}
+function mostrarQRCliente() {
+  setTimeout(() => {
+    dialog(`<h2 style="font-size:20px;font-weight:800;margin:0">Ahora: que el cliente escanee este QR</h2>
+      <div class="center"><img src="qr-app.png" alt="QR para descargar la app Puntos Santana" style="width:240px;height:240px;border-radius:12px;border:1px solid var(--line)"></div>
+      <ol style="margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px">
+        <li>Que escanee el QR con la <b>cámara</b> de su celular.</li>
+        <li>Que instale la app: <b>Instalar la app en mi celular</b> (Android) o <b>Compartir → Agregar a inicio</b> (iPhone).</li>
+        <li>Que la abra <b>desde el ícono</b>, toque <b>Activar notificaciones</b> y luego <b>Permitir</b>.</li>
+        <li>Ahora sí: que entre con su <b>cédula y PIN</b>.</li>
+      </ol>`, async () => {}, 'Listo');
+    const d = document.querySelector('dialog:last-of-type [data-x]'); if (d) d.remove();
+  }, 300);
 }
 function tarjetaPush(activo) {
   if (!soportaPush() && !esIOS()) return '';
