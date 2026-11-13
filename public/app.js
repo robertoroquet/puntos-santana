@@ -565,10 +565,10 @@ function clientBar(f) {
   const cumple = f.cumple_hoy ? '<span class="pill sun">¡Cumple hoy!</span>' : (f.cumple_mes ? '<span class="pill sun">Cumple este mes</span>' : '');
   const act = f.activo ? '' : `
   <form class="card stack" id="actf" novalidate style="border-color:var(--yellow);background:#FFFBEA">
-    <div><b style="font-size:17px">Cliente sin activar</b><div class="small muted">Viene de la base de datos del mall. Puede acumular, pero para entrar a la app y redimir debe activar su cuenta: celular, PIN y autorización de datos.</div></div>
+    <div><b style="font-size:17px">Cliente sin activar</b><div class="small muted">Viene de la base de datos del mall. Ya tiene <b>${num(f.puntos)} puntos</b> guardados. Puede acumular, pero para entrar a la app y redimir debe activar su cuenta. Confirma con el cliente el celular y el correo, y que él mismo escriba su PIN.</div></div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
-      <div class="field"><label for="a-cel">Celular *</label><input class="input" id="a-cel" inputmode="tel"></div>
-      <div class="field"><label for="a-mail">Correo (opcional)</label><input class="input" id="a-mail" type="email"></div>
+      <div class="field"><label for="a-cel">Celular *</label><input class="input" id="a-cel" inputmode="tel" value="${esc(f.celular_activar || '')}"></div>
+      <div class="field"><label for="a-mail">Correo (opcional)</label><input class="input" id="a-mail" type="email" value="${esc(f.correo_activar || '')}"></div>
       ${f.fecha_nacimiento ? '' : '<div class="field"><label for="a-nac">Fecha de nacimiento</label><input class="input" id="a-nac" type="date"></div>'}
       <div class="field"><label for="a-fav">Tienda favorita *</label><select class="input" id="a-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
       <div class="field"><label for="a-pin">PIN (4 números) *</label><input class="input pin" id="a-pin" type="password" inputmode="numeric" maxlength="4"></div>
