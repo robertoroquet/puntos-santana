@@ -144,7 +144,10 @@ const AUTORIZA = 'El cliente leyó y acepta los <a href="#" data-politicas style
 /* ---------- router ---------- */
 function route() {
   const h = location.hash.replace(/^#/, '') || '/';
-  if (h.startsWith('/personal')) return staffRoute(h.split('/')[2] || '');
+  // Computadores de caja: la app instalada abre en el inicio de sesión del personal
+  let modo = null; try { modo = localStorage.getItem('ps_modo'); } catch {}
+  if (h === '/' && modo === 'personal' && !tok()) { location.replace('#/personal'); return; }
+  if (h.startsWith('/personal')) { try { localStorage.setItem('ps_modo', 'personal'); } catch {} return staffRoute(h.split('/')[2] || ''); }
   return clientRoute(h.split('/')[1] || '', h.split('/')[2] || '');
 }
 window.addEventListener('hashchange', route);
