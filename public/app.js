@@ -68,7 +68,7 @@ const ERR = {
   CLAVE_CORTA: 'La clave debe tener mínimo 4 caracteres.',
   USA_CLAVE_REDENCION: 'Los premios se entregan desde la lista de solicitudes con la clave de redención.',
   REDIME_EN_TIENDA: 'Los premios se reclaman en Pilatos, Derek o el Restaurante con tu cédula y tu PIN.',
-  PREMIO_OTRA_TIENDA: 'Este premio no se entrega aquí: las prendas se entregan en Pilatos o Derek y la comida en el Restaurante.',
+  PREMIO_OTRA_TIENDA: 'Este premio no se entrega aquí: las prendas se entregan en Pilatos o Derek, y la comida en Pilatos, Derek o el Restaurante.',
   FACTURA_YA_ACUMULADA: 'Esta factura ya fue registrada antes. No se sumaron puntos.',
   SELLO_HOY: 'Este cliente ya recibió su sello hoy (máximo 1 por día).',
   TARJETA_LLENA: 'La tarjeta ya está completa: entrega el regalo primero.',
@@ -368,7 +368,7 @@ async function clientPremios() {
     <div class="row between"><h1 style="font-size:24px;font-weight:800">Premios</h1><span class="pill navy" style="font-size:13px;padding:6px 14px">${num(d.puntos)} pts</span></div>
     ${reservado ? `<p class="small muted" style="margin:0">Tienes ${num(reservado)} pts apartados en premios por reclamar.</p>` : ''}
     ${items}
-    <p class="small muted center" style="margin:0">Al redimir tienes <b>24 horas</b> para reclamarlo: las prendas en <b>Pilatos</b> o <b>Derek</b> y la comida en el <b>Restaurante</b>.</p>
+    <p class="small muted center" style="margin:0">Al redimir tienes <b>24 horas</b> para reclamarlo: las prendas en <b>Pilatos</b> o <b>Derek</b>, y la comida en <b>Pilatos</b>, <b>Derek</b> o el <b>Restaurante</b>.</p>
   </div>${tabbar('premios')}</div>`;
   $$('[data-quiero]').forEach((b) => b.onclick = async () => {
     if (!confirm(`¿Quieres redimir "${b.dataset.nombre}"? Tendrás 24 horas para reclamarlo.`)) return;
@@ -854,7 +854,7 @@ function vSellos(box) {
 function vRedimir(box) {
   const miTienda = tiendaNombre(perfil.tienda_id);
   box.innerHTML = `<div class="row between wrap" style="gap:10px"><h1 style="font-size:28px;font-weight:800">Entregar premio</h1><button class="btn ghost sm" id="rd-act">Actualizar</button></div>
-  <p class="muted" style="margin:0">Aquí aparecen los premios que los clientes redimieron desde su celular${perfil.rol === 'admin' ? '' : miTienda === 'RESTAURANTE' ? ' (comida del Restaurante y Punto Dulce)' : ' (prendas y premios de las tiendas)'}. Tienen 24 horas para reclamarlos. Cuando llegue el cliente, verifica su cédula física, pídele la <b>clave única</b> que genera en su celular y escríbela para entregar el premio.</p>
+  <p class="muted" style="margin:0">Aquí aparecen los premios que los clientes redimieron desde su celular${perfil.rol === 'admin' ? '' : miTienda === 'RESTAURANTE' ? ' (comida del Restaurante y Punto Dulce)' : ' (prendas y también comida del Restaurante y Punto Dulce)'}. Tienen 24 horas para reclamarlos. Cuando llegue el cliente, verifica su cédula física, pídele la <b>clave única</b> que genera en su celular y escríbela para entregar el premio.</p>
   <div id="rd-list" class="stack" style="margin-top:14px"><div class="empty">Cargando…</div></div>
   <section class="card" style="margin-top:18px"><h2 style="font-size:18px;font-weight:800;margin-bottom:8px">Entregados en los últimos 7 días</h2><div id="rd-hist"><div class="empty">Cargando…</div></div></section>`;
   const tints = ['#FFE7A8', '#FCD9D2', '#D3EEF4', '#E8E2F5'];
