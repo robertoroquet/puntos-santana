@@ -614,7 +614,7 @@ function clientBar(f) {
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
       <div class="field"><label for="a-cel">Celular *</label><input class="input" id="a-cel" inputmode="tel" value="${esc(f.celular_activar || '')}"></div>
       <div class="field"><label for="a-mail">Correo (opcional)</label><input class="input" id="a-mail" type="email" value="${esc(f.correo_activar || '')}"></div>
-      ${f.fecha_nacimiento ? '' : '<div class="field"><label for="a-nac">Fecha de nacimiento</label><input class="input" id="a-nac" type="date"></div>'}
+      <div class="field"><label for="a-nac">Fecha de nacimiento *</label><input class="input" id="a-nac" type="date" max="${iso(new Date())}" value="${esc(f.fecha_nacimiento || '')}"></div>
       <div class="field"><label for="a-fav">Tienda favorita *</label><select class="input" id="a-fav"><option value="">Elige una tienda…</option>${tiendas.map((t) => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('')}</select></div>
       <div class="field"><label for="a-pin">PIN (4 números) *</label><input class="input pin" id="a-pin" type="password" inputmode="numeric" maxlength="4"></div>
       <div class="field"><label for="a-pin2">Repetir PIN *</label><input class="input pin" id="a-pin2" type="password" inputmode="numeric" maxlength="4"></div>
@@ -625,7 +625,7 @@ function clientBar(f) {
   </form>`;
   return `<div class="card client-bar">
     <div class="avatar">${esc(ini(f.nombre))}</div>
-    <div style="flex:1;min-width:160px"><div class="row wrap" style="gap:8px"><b style="font-size:18px">${esc(f.nombre)}</b>${cumple}${f.activo ? '' : '<span class="pill" style="background:#FFE7A8">Sin activar</span>'}</div><div class="small muted">C.C. ${esc(num(f.cedula))}${f.celular_fin ? ' · Cel. ••• ' + esc(f.celular_fin) : ''}</div></div>
+    <div style="flex:1;min-width:160px"><div class="row wrap" style="gap:8px"><b style="font-size:18px">${esc(f.nombre)}</b>${cumple}${f.activo ? '' : '<span class="pill" style="background:#FFE7A8">Sin activar</span>'}</div><div class="small muted">C.C. ${esc(num(f.cedula))}${f.celular_fin ? ' · Cel. ••• ' + esc(f.celular_fin) : ''} · Nac. ${f.fecha_nacimiento ? fdate(f.fecha_nacimiento) : '<b style="color:var(--coral-t)">sin fecha</b>'}</div></div>
     <div class="kv"><span>Puntos</span><b>${num(f.puntos)}</b></div>
     <div class="kv"><span>Sellos</span><b style="color:var(--coral-t)">${f.sellos}/${meta}</b></div>
     ${f.activo ? '<button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>' : (puedeEditarSinActivar() ? '<button type="button" class="btn ghost sm" id="edit-ina">✏️ Editar datos</button>' : '')}
@@ -678,6 +678,7 @@ document.addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target, v = (id) => (f.querySelector('#' + id) || {}).value || '';
   if (digits(v('a-cel')).length < 7) return toast('Escribe el celular del cliente.', true);
+  if (!v('a-nac')) return toast('Escribe la fecha de nacimiento: con ella le enviamos su regalo de cumpleaños.', true);
   if (!/^\d{4}$/.test(v('a-pin'))) return toast(ERR.PIN_INVALIDO, true);
   if (v('a-pin') !== v('a-pin2')) return toast('Los dos PIN no coinciden.', true);
   if (!v('a-fav')) return toast(ERR.TIENDA_FAVORITA_REQUERIDA, true);
@@ -1098,7 +1099,7 @@ async function vClientes(box) {
     det.innerHTML = '<div class="card empty">Cargando…</div>';
     let tx; try { tx = await rpc('admin_transacciones', { p_cliente: c.id }); } catch (e) { det.innerHTML = `<div class="card empty">${errText(e)}</div>`; return; }
     det.innerHTML = `<div class="card stack">
-      <div class="row between wrap"><div><b style="font-size:18px">${esc(c.nombre)}</b><div class="small muted">C.C. ${esc(num(c.cedula))} · ${esc(c.celular)}${c.correo ? ' · ' + esc(c.correo) : ''}${c.tienda_registro ? ' · inscrito en ' + esc(c.tienda_registro) : ''}</div></div>
+      <div class="row between wrap"><div><b style="font-size:18px">${esc(c.nombre)}</b><div class="small muted">C.C. ${esc(num(c.cedula))} · ${esc(c.celular || 'sin celular')}${c.correo ? ' · ' + esc(c.correo) : ''} · Nac. ${c.fecha_nacimiento ? fdate(c.fecha_nacimiento) : 'sin fecha'}${c.tienda_registro ? ' · inscrito en ' + esc(c.tienda_registro) : ''}</div></div>
       <span class="pill navy" style="padding:6px 14px">${num(c.puntos)} pts · ${c.sellos}/${config.sellos_meta || 8} sellos</span></div>
       <div class="row wrap"><button class="btn ghost sm" id="ed-cli">Editar datos</button><button class="btn ghost sm" id="rs-pin">Restablecer PIN</button></div>
       <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Acción</th><th>Valor</th><th>Puntos</th><th>Vence</th><th></th></tr></thead><tbody>
@@ -1149,8 +1150,9 @@ async function vClientes(box) {
     $('#ed-cli').onclick = () => dialog(`<h2 style="font-size:20px;font-weight:800">Editar datos del cliente</h2>
       <div class="field"><label for="d-n">Nombre</label><input class="input" id="d-n" value="${esc(c.nombre)}"></div>
       <div class="field"><label for="d-c">Celular</label><input class="input" id="d-c" value="${esc(c.celular)}"></div>
-      <div class="field"><label for="d-e">Correo</label><input class="input" id="d-e" type="email" value="${esc(c.correo || '')}"></div>`, async (dl) => {
-      const { error } = await sb.from('clientes').update({ nombre: $('#d-n', dl).value.trim(), celular: digits($('#d-c', dl).value), correo: $('#d-e', dl).value.trim() || null }).eq('id', c.id);
+      <div class="field"><label for="d-e">Correo</label><input class="input" id="d-e" type="email" value="${esc(c.correo || '')}"></div>
+      <div class="field"><label for="d-nac">Fecha de nacimiento</label><input class="input" id="d-nac" type="date" max="${iso(new Date())}" value="${esc(c.fecha_nacimiento || '')}"></div>`, async (dl) => {
+      const { error } = await sb.from('clientes').update({ nombre: $('#d-n', dl).value.trim(), celular: digits($('#d-c', dl).value), correo: $('#d-e', dl).value.trim() || null, fecha_nacimiento: $('#d-nac', dl).value || null }).eq('id', c.id);
       if (error) throw error; toast('Datos actualizados.'); load($('#q').value.trim());
     });
   }
