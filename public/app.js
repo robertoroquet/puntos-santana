@@ -628,7 +628,7 @@ function clientBar(f) {
     <div style="flex:1;min-width:160px"><div class="row wrap" style="gap:8px"><b style="font-size:18px">${esc(f.nombre)}</b>${cumple}${f.activo ? '' : '<span class="pill" style="background:#FFE7A8">Sin activar</span>'}</div><div class="small muted">C.C. ${esc(num(f.cedula))}${f.celular_fin ? ' · Cel. ••• ' + esc(f.celular_fin) : ''} · Nac. ${f.fecha_nacimiento ? fdate(f.fecha_nacimiento) : '<b style="color:var(--coral-t)">sin fecha</b>'}</div></div>
     <div class="kv"><span>Puntos</span><b>${num(f.puntos)}</b></div>
     <div class="kv"><span>Sellos</span><b style="color:var(--coral-t)">${f.sellos}/${meta}</b></div>
-    ${f.activo ? '<button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>' : (puedeEditarSinActivar() ? '<button type="button" class="btn ghost sm" id="edit-ina">✏️ Editar datos</button>' : '')}
+    ${puedeEditarSinActivar() ? '<button type="button" class="btn ghost sm" id="edit-ina">✏️ Editar datos</button>' : ''}${f.activo ? '<button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>' : ''}
   </div>${act}`;
 }
 // Pilatos y Derek pueden corregir los datos de clientes de la base que aún no están activos
@@ -637,7 +637,7 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('#edit-ina') || !ficha) return;
   const f = ficha;
   dialog(`<h2 style="font-size:20px;font-weight:800">Editar datos del cliente</h2>
-    <p class="muted" style="margin:0">Solo para clientes <b>sin activar</b>. Verifica todo con la <b>cédula física</b>. Los ${num(f.puntos)} puntos se conservan.</p>
+    <p class="muted" style="margin:0">Verifica todo con la <b>cédula física</b>. Los ${num(f.puntos)} puntos se conservan.${f.activo ? ' Si cambias la cédula, el cliente entrará a la app con la <b>cédula nueva</b> y el mismo PIN.' : ''}</p>
     <div class="field"><label for="e-nom">Nombre completo *</label><input class="input" id="e-nom" value="${esc(f.nombre)}"></div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
       <div class="field"><label for="e-ced">Cédula *</label><input class="input" id="e-ced" inputmode="numeric" value="${esc(f.cedula)}"></div>
@@ -651,7 +651,7 @@ document.addEventListener('click', (e) => {
     if (!/^\d{5,12}$/.test(digits(v('e-ced')))) { toast(ERR.CEDULA_INVALIDA, true); return false; }
     if (!dl.querySelector('#e-ok').checked) { toast(ERR.VERIFICAR_CEDULA, true); return false; }
     ficha = await rpc('recaudador_editar_cliente', { p_cedula: f.cedula, p_nombre: v('e-nom'), p_cedula_nueva: digits(v('e-ced')), p_celular: v('e-cel'), p_correo: v('e-mail'), p_nacimiento: v('e-nac') || null });
-    toast('Datos actualizados. Ahora puedes activar la cuenta.');
+    toast(f.activo ? 'Datos actualizados.' : 'Datos actualizados. Ahora puedes activar la cuenta.');
     mantenerFicha = true; route();
   }, 'Guardar cambios');
 });
