@@ -59,6 +59,13 @@ const ERR = {
   HELADO_YA_ENTREGADO: 'Este cliente ya recibió su helado de cumpleaños este año.',
   SIN_CLIENTES_ELEGIDOS: 'Agrega al menos un cliente.',
   FACTURA_MAS_DE_UN_MES: 'Esta factura tiene más de 1 mes. Solo se acumulan facturas de hasta 1 mes después de la compra.',
+  NOMBRE_REQUERIDO: 'Escribe el nombre del cliente.',
+  CEDULA_INVALIDA: 'La cédula debe tener entre 5 y 12 números.',
+  YA_ACTIVO_NO_EDITABLE: 'Este cliente ya está activo: sus datos solo los cambia el administrador.',
+  CEDULA_EXISTE: 'Esa cédula ya pertenece a otro cliente.',
+  CORREO_INVALIDO: 'El correo no es válido.',
+  FECHA_INVALIDA: 'La fecha de nacimiento no es válida.',
+  SIN_PERMISO: 'Esta caja no tiene permiso para hacer eso.',
   SIN_CLAVE_UNICA: 'El cliente aún no ha generado su clave única. Pídele que toque "Generar clave única" en su celular.',
   CLAVE_UNICA_INCORRECTA: 'Clave única incorrecta. Revísala con el cliente.',
   CLAVE_UNICA_ANULADA: 'Demasiados intentos: la clave se anuló. El cliente debe generar una nueva.',
@@ -621,9 +628,33 @@ function clientBar(f) {
     <div style="flex:1;min-width:160px"><div class="row wrap" style="gap:8px"><b style="font-size:18px">${esc(f.nombre)}</b>${cumple}${f.activo ? '' : '<span class="pill" style="background:#FFE7A8">Sin activar</span>'}</div><div class="small muted">C.C. ${esc(num(f.cedula))}${f.celular_fin ? ' · Cel. ••• ' + esc(f.celular_fin) : ''}</div></div>
     <div class="kv"><span>Puntos</span><b>${num(f.puntos)}</b></div>
     <div class="kv"><span>Sellos</span><b style="color:var(--coral-t)">${f.sellos}/${meta}</b></div>
-    ${f.activo ? '<button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>' : ''}
+    ${f.activo ? '<button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>' : (puedeEditarSinActivar() ? '<button type="button" class="btn ghost sm" id="edit-ina">✏️ Editar datos</button>' : '')}
   </div>${act}`;
 }
+// Pilatos y Derek pueden corregir los datos de clientes de la base que aún no están activos
+const puedeEditarSinActivar = () => perfil && (perfil.rol === 'admin' || ['PILATOS', 'DEREK'].includes(tiendaNombre(perfil.tienda_id)));
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#edit-ina') || !ficha) return;
+  const f = ficha;
+  dialog(`<h2 style="font-size:20px;font-weight:800">Editar datos del cliente</h2>
+    <p class="muted" style="margin:0">Solo para clientes <b>sin activar</b>. Verifica todo con la <b>cédula física</b>. Los ${num(f.puntos)} puntos se conservan.</p>
+    <div class="field"><label for="e-nom">Nombre completo *</label><input class="input" id="e-nom" value="${esc(f.nombre)}"></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+      <div class="field"><label for="e-ced">Cédula *</label><input class="input" id="e-ced" inputmode="numeric" value="${esc(f.cedula)}"></div>
+      <div class="field"><label for="e-cel">Celular</label><input class="input" id="e-cel" inputmode="tel" value="${esc(f.celular_activar || '')}"></div>
+      <div class="field"><label for="e-mail">Correo</label><input class="input" id="e-mail" type="email" value="${esc(f.correo_activar || '')}"></div>
+      <div class="field"><label for="e-nac">Fecha de nacimiento</label><input class="input" id="e-nac" type="date" value="${esc(f.fecha_nacimiento || '')}"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="e-ok"><span>Verifiqué la <b>cédula física</b> del cliente y estos datos son correctos.</span></label>`, async (dl) => {
+    const v = (id) => dl.querySelector('#' + id).value;
+    if (!v('e-nom').trim()) { toast(ERR.NOMBRE_REQUERIDO, true); return false; }
+    if (!/^\d{5,12}$/.test(digits(v('e-ced')))) { toast(ERR.CEDULA_INVALIDA, true); return false; }
+    if (!dl.querySelector('#e-ok').checked) { toast(ERR.VERIFICAR_CEDULA, true); return false; }
+    ficha = await rpc('recaudador_editar_cliente', { p_cedula: f.cedula, p_nombre: v('e-nom'), p_cedula_nueva: digits(v('e-ced')), p_celular: v('e-cel'), p_correo: v('e-mail'), p_nacimiento: v('e-nac') || null });
+    toast('Datos actualizados. Ahora puedes activar la cuenta.');
+    mantenerFicha = true; route();
+  }, 'Guardar cambios');
+});
 // Restablecer PIN en tienda (verificando la cédula física)
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#rpin-btn') || !ficha) return;
