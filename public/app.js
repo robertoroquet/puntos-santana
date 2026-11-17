@@ -628,7 +628,7 @@ function clientBar(f) {
     <div style="flex:1;min-width:160px"><div class="row wrap" style="gap:8px"><b style="font-size:18px">${esc(f.nombre)}</b>${cumple}${f.activo ? '' : '<span class="pill" style="background:#FFE7A8">Sin activar</span>'}</div><div class="small muted">C.C. ${esc(num(f.cedula))}${f.celular_fin ? ' · Cel. ••• ' + esc(f.celular_fin) : ''} · Nac. ${f.fecha_nacimiento ? fdate(f.fecha_nacimiento) : '<b style="color:var(--coral-t)">sin fecha</b>'}</div></div>
     <div class="kv"><span>Puntos</span><b>${num(f.puntos)}</b></div>
     <div class="kv"><span>Sellos</span><b style="color:var(--coral-t)">${f.sellos}/${meta}</b></div>
-    ${puedeEditarSinActivar() ? '<button type="button" class="btn ghost sm" id="edit-ina">✏️ Editar datos</button>' : ''}${f.activo ? '<button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>' : ''}
+    ${puedeEditarSinActivar() ? '<button type="button" class="btn ghost sm" id="edit-ina">✏️ Editar datos</button>' : ''}${f.activo ? `<button type="button" class="btn ghost sm" data-bienv="${esc(f.cedula)}">🔔 Bienvenida</button><button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>` : ''}
   </div>${act}`;
 }
 // Pilatos y Derek pueden corregir los datos de clientes de la base que aún no están activos
@@ -687,7 +687,7 @@ document.addEventListener('submit', async (e) => {
   try {
     ficha = await rpc('activar_cliente', { p_cedula: ficha.cedula, p_celular: v('a-cel'), p_correo: v('a-mail'), p_pin: v('a-pin'), p_acepta: true, p_nacimiento: v('a-nac') || null, p_tienda_favorita: Number(v('a-fav')), p_promo_tiendas: Array.from(f.querySelectorAll('input[name="a-promo"]:checked')).map((i) => Number(i.value)) });
     toast('Cuenta activada. Ya puede entrar a la app con su cédula y PIN.');
-    mostrarQRCliente();
+    mostrarQRCliente(ficha.cedula);
     mantenerFicha = true; route();
   } catch (er) { toast(errText(er), true); b.disabled = false; }
 });
@@ -746,7 +746,7 @@ function vNuevo(box) {
     try {
       ficha = await rpc('crear_cliente', { p_cedula: v('n-ced'), p_nombre: v('n-nom'), p_celular: v('n-cel'), p_correo: v('n-mail'), p_pin: v('n-pin'), p_acepta: true, p_nacimiento: v('n-nac'), p_tienda_favorita: Number(v('n-fav')), p_promo_tiendas: $$('input[name="n-promo"]:checked').map((i) => Number(i.value)) });
       toast('Cliente inscrito. Ya puedes acumular su compra.');
-      mostrarQRCliente();
+      mostrarQRCliente(ficha && ficha.cedula);
       mantenerFicha = true; location.hash = '#/personal/acumular';
     } catch (er) { err.textContent = errText(er); b.disabled = false; }
   };
@@ -815,12 +815,12 @@ function vAcumular(box) {
           ${fila('Puntos que gana', '+' + num(pts), true)}
         </div>`, async () => {
         const r = await rpc('acumular', { p_cedula: ficha.cedula, p_tienda_id: tienda, p_valor: valor, p_factura_numero: fnum, p_factura_fecha: ffecha, p_factura_nombre: fnom, p_factura_cedula: digits(fced) || null });
-        const nombre = r.cliente.nombre, total = r.cliente.puntos, fac = fnum.trim().toUpperCase();
+        const nombre = r.cliente.nombre, total = r.cliente.puntos, fac = fnum.trim().toUpperCase(), cedOk = r.cliente.cedula, activoOk = r.cliente.activo;
         const tipoCli = r.recurrente ? `<span class="pill navy">Cliente recurrente en ${esc(r.tienda)}</span>` : `<span class="pill" style="background:var(--coral);color:#fff">Cliente nuevo en ${esc(r.tienda)}</span>`;
         // Formulario en blanco: cliente, cédula y factura
         ficha = null; valor = 0; fnum = ''; fnom = ''; fced = ''; tienda = null; ffecha = iso(new Date());
         $('#sced').value = ''; $('#sres').innerHTML = '';
-        $('#acc').innerHTML = `<div class="card okcard">${ic('check', 30, 2.6)}<div><div class="row wrap" style="gap:8px"><b style="font-size:18px">Compra registrada</b>${tipoCli}</div><div class="small">Factura ${esc(fac)} · +${num(r.puntos_ganados)} puntos para ${esc(nombre)} · Total: ${num(total)} pts</div><div class="small muted">El formulario quedó en blanco para la siguiente compra.</div></div></div>`;
+        $('#acc').innerHTML = `<div class="card okcard">${ic('check', 30, 2.6)}<div><div class="row wrap" style="gap:8px"><b style="font-size:18px">Compra registrada</b>${tipoCli}</div><div class="small">Factura ${esc(fac)} · +${num(r.puntos_ganados)} puntos para ${esc(nombre)} · Total: ${num(total)} pts</div><div class="small muted">El formulario quedó en blanco para la siguiente compra.</div>${activoOk ? `<button type="button" class="btn ghost sm" data-bienv="${esc(cedOk)}" style="margin-top:8px">🔔 Enviar mensaje de bienvenida</button>` : ''}</div></div>`;
         $('#sced').focus();
         toast(`+${num(r.puntos_ganados)} puntos para ${nombre}`);
       }, 'Sí, son correctos');
@@ -1637,7 +1637,7 @@ async function vMensajes(box) {
     catch (er) { toast(errText(er), true); b.disabled = false; }
   };
   const { data, error } = await sb.from('mensajes').select('id,titulo,cuerpo,segmento,segmento_tienda,enviado_en,mensajes_destinatarios(count)').order('enviado_en', { ascending: false }).limit(50);
-  const segName = { ...Object.fromEntries(SEG), cumpleanos: 'Cumpleaños del mes', cerca_premio: 'Recompra (cerca de un premio)', elegidos: 'Clientes elegidos' };
+  const segName = { ...Object.fromEntries(SEG), cumpleanos: 'Cumpleaños del mes', cerca_premio: 'Recompra (cerca de un premio)', elegidos: 'Clientes elegidos', bienvenida: 'Bienvenida desde caja' };
   $('#hist').innerHTML = '<h2 style="font-size:20px;font-weight:800">Enviados</h2>' + (error ? `<div class="empty">${errText(error)}</div>` : (data.map((m) => `<div style="border-top:1px solid var(--line);padding-top:10px" class="stack" ><div class="row between" style="gap:8px;align-items:flex-start"><b>${esc(m.titulo)}</b><span class="small muted" style="flex:0 0 auto">${fdate(m.enviado_en)}</span></div><span class="small muted">${esc(m.cuerpo)}</span><span class="small">${esc(segName[m.segmento] || m.segmento)}${m.segmento_tienda ? ': ' + esc(m.segmento_tienda) : ''} · ${num(m.mensajes_destinatarios?.[0]?.count || 0)} clientes</span></div>`).join('') || '<div class="empty">Aún no has enviado mensajes.</div>'));
 }
 
@@ -1905,7 +1905,24 @@ function tarjetaNotifLogin() {
     <b>Antes de entrar: activa las notificaciones</b><span class="small muted">Así te llegan tus promociones, cupones y avisos de puntos.</span>
     <button type="button" class="btn coral" id="notif-login">🔔 Activar notificaciones</button></div>`;
 }
-function mostrarQRCliente() {
+// Mensaje de bienvenida desde la caja: confirma si al cliente le llegan las notificaciones
+async function enviarBienvenida(cedula, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await rpc('recaudador_bienvenida', { p_cedula: cedula });
+    const M = {
+      enviado: ['✅ Mensaje de bienvenida enviado', `Se envió a ${r.dispositivos} celular${r.dispositivos === 1 ? '' : 'es'} del cliente. Pregúntale si le llegó la notificación: si le llegó, todo quedó bien.`],
+      sin_notificaciones: ['🔕 Este cliente no tiene las notificaciones activas', 'Pídele que abra la app <b>desde el ícono</b>, entre con su cédula y PIN, y en Inicio toque <b>Activar notificaciones</b> → <b>Permitir</b>. Después vuelve a tocar este botón.'],
+      sin_activar: ['Primero activa la cuenta', 'El cliente aún no está activo: actívalo con su celular y PIN y luego envíale la bienvenida.'],
+      limite: ['Ya se enviaron 3 hoy', 'A este cliente ya se le enviaron 3 mensajes de bienvenida hoy. Si no le llegan, revisa que tenga las notificaciones permitidas en el celular.'],
+    }[r.estado] || ['Listo', ''];
+    dialog(`<h2 style="font-size:20px;font-weight:800;margin:0">${M[0]}</h2><p style="margin:0">${M[1]}</p>`, async () => {}, 'Entendido');
+    const d = document.querySelector('dialog:last-of-type [data-x]'); if (d) d.remove();
+  } catch (e) { toast(errText(e), true); } finally { if (btn) btn.disabled = false; }
+}
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-bienv]'); if (!b) return; e.preventDefault(); enviarBienvenida(b.dataset.bienv, b); });
+
+function mostrarQRCliente(cedula) {
   setTimeout(() => {
     dialog(`<h2 style="font-size:20px;font-weight:800;margin:0">Ahora: que el cliente escanee este QR</h2>
       <div class="center"><img src="qr-app.png" alt="QR para descargar la app Puntos Santana" style="width:240px;height:240px;border-radius:12px;border:1px solid var(--line)"></div>
@@ -1914,7 +1931,8 @@ function mostrarQRCliente() {
         <li>Que instale la app: <b>Instalar la app en mi celular</b> (Android) o <b>Compartir → Agregar a inicio</b> (iPhone).</li>
         <li>Que la abra <b>desde el ícono</b>, toque <b>Activar notificaciones</b> y luego <b>Permitir</b>.</li>
         <li>Ahora sí: que entre con su <b>cédula y PIN</b>.</li>
-      </ol>`, async () => {}, 'Listo');
+        <li>Cuando ya esté adentro, toca este botón para probar que le llegan las notificaciones:</li>
+      </ol>${cedula ? `<button type="button" class="btn coral" data-bienv="${esc(cedula)}" style="align-self:flex-start">🔔 Enviar mensaje de bienvenida</button>` : ''}`, async () => {}, 'Listo');
     const d = document.querySelector('dialog:last-of-type [data-x]'); if (d) d.remove();
   }, 300);
 }
