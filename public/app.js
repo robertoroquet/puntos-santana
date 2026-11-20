@@ -100,7 +100,7 @@ function errText(e) {
 async function rpc(fn, args) {
   const { data, error } = await sb.rpc(fn, args);
   if (error) throw error;
-  if (data && data.error) throw new Error(data.error);
+  if (data && data.error) { const e = new Error(data.error); e.data = data; throw e; }
   return data;
 }
 
@@ -631,6 +631,23 @@ function clientBar(f) {
     ${puedeEditarSinActivar() ? '<button type="button" class="btn ghost sm" id="edit-ina">✏️ Editar datos</button>' : ''}${f.activo ? `<button type="button" class="btn ghost sm" data-bienv="${esc(f.cedula)}">🔔 Bienvenida</button><button type="button" class="btn ghost sm" id="rpin-btn">Restablecer PIN</button>` : ''}
   </div>${act}`;
 }
+// Aviso claro cuando la factura ya se acumuló (por ejemplo, en la otra caja)
+function avisoFacturaRepetida(o) {
+  const f = new Date(o.fecha);
+  dialog(`<div class="stack" style="gap:12px">
+    <div style="display:flex;gap:12px;align-items:center"><div style="width:52px;height:52px;border-radius:50%;background:#FCD9D2;color:#B8382A;display:flex;align-items:center;justify-content:center;font-size:28px;flex:none">⚠️</div>
+    <div><h2 style="font-size:21px;font-weight:800;margin:0">Esta factura YA fue acumulada</h2><div class="small" style="color:#B8382A;font-weight:700">No se sumaron puntos. No la intentes otra vez.</div></div></div>
+    <div class="vbox">
+      <div class="vrow"><span>Factura</span><b>N° ${esc(o.factura || '')}${o.tienda ? ' · ' + esc(o.tienda) : ''}</b></div>
+      <div class="vrow"><span>Acumulada el</span><b>${fdate(o.fecha)} · ${f.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}</b></div>
+      <div class="vrow"><span>En la caja de</span><b>${esc(o.caja || '—')}</b></div>
+      <div class="vrow"><span>A nombre de</span><b>${esc(o.cliente)}</b></div>
+      <div class="vrow"><span>Cédula</span><b>${esc(num(o.cedula))}</b></div>
+      <div class="vrow"><span>Valor / puntos</span><b>${money(o.valor)} · +${num(o.puntos)} pts</b></div>
+    </div>
+    <p class="small muted" style="margin:0">${o.mismo_cliente ? 'Es el mismo cliente: sus puntos de esta factura ya están en su cuenta.' : '<b style="color:#B8382A">Ojo: se acumuló a OTRA persona.</b> Avísale al administrador.'}</p></div>`, async () => {}, 'Entendido');
+  const d = document.querySelector('dialog:last-of-type [data-x]'); if (d) d.remove();
+}
 // Pilatos y Derek pueden corregir los datos de clientes de la base que aún no están activos
 const puedeEditarSinActivar = () => perfil && (perfil.rol === 'admin' || ['PILATOS', 'DEREK'].includes(tiendaNombre(perfil.tienda_id)));
 document.addEventListener('click', (e) => {
@@ -814,7 +831,9 @@ function vAcumular(box) {
           ${fila('Valor de la factura', money(valor), true)}
           ${fila('Puntos que gana', '+' + num(pts), true)}
         </div>`, async () => {
-        const r = await rpc('acumular', { p_cedula: ficha.cedula, p_tienda_id: tienda, p_valor: valor, p_factura_numero: fnum, p_factura_fecha: ffecha, p_factura_nombre: fnom, p_factura_cedula: digits(fced) || null });
+        let r;
+        try { r = await rpc('acumular', { p_cedula: ficha.cedula, p_tienda_id: tienda, p_valor: valor, p_factura_numero: fnum, p_factura_fecha: ffecha, p_factura_nombre: fnom, p_factura_cedula: digits(fced) || null }); }
+        catch (e) { if (e.message === 'FACTURA_YA_ACUMULADA' && e.data && e.data.original) { avisoFacturaRepetida(e.data.original); return; } throw e; }
         const nombre = r.cliente.nombre, total = r.cliente.puntos, fac = fnum.trim().toUpperCase(), cedOk = r.cliente.cedula, activoOk = r.cliente.activo;
         const tipoCli = r.recurrente ? `<span class="pill navy">Cliente recurrente en ${esc(r.tienda)}</span>` : `<span class="pill" style="background:var(--coral);color:#fff">Cliente nuevo en ${esc(r.tienda)}</span>`;
         // Formulario en blanco: cliente, cédula y factura
