@@ -44,7 +44,7 @@ const ERR = {
   YA_SOLICITADO: 'Ya tienes este regalo solicitado.',
   SOLICITUD_NO_DISPONIBLE: 'Esta solicitud ya fue entregada o cancelada.',
   NO_AUTORIZADO: 'No tienes permiso para esta acción.',
-  NO_ES_RECAUDADOR: 'Solo los puntos recaudadores (Pilatos, Derek y Restaurante) pueden entregar premios.',
+  NO_ES_RECAUDADOR: 'Solo Pilatos y Derek pueden entregar premios.',
   SOLO_ACUMULACIONES: 'Solo se pueden editar compras.',
   FACTURA_REQUERIDA: 'Escribe el número de la factura.',
   FACTURA_USADA: 'Esa factura ya se usó para un sello.',
@@ -52,6 +52,7 @@ const ERR = {
   FECHA_FUTURA: 'La fecha de la factura no puede ser futura.',
   FACTURA_VENCIDA: 'Esa factura tiene más de un año: sus puntos ya estarían vencidos.',
   NOMBRE_NO_COINCIDE: 'La factura no está a nombre de este cliente. Solo el titular puede acumular sus facturas.',
+  SOLO_SELLOS: 'Este usuario solo puede marcar sellos.',
   SOLO_RESTAURANTE: 'El helado de cumpleaños solo se entrega en el Restaurante (Punto Dulce).',
   CLIENTE_SIN_ACTIVAR: 'El cliente debe activar su cuenta en Puntos Santana primero.',
   SIN_FECHA_NACIMIENTO: 'El cliente no tiene fecha de nacimiento registrada.',
@@ -74,12 +75,12 @@ const ERR = {
   SOLICITUD_VENCIDA: 'Esta solicitud venció: pasaron las 24 horas.',
   CLAVE_CORTA: 'La clave debe tener mínimo 4 caracteres.',
   USA_CLAVE_REDENCION: 'Los premios se entregan desde la lista de solicitudes con la clave de redención.',
-  REDIME_EN_TIENDA: 'Los premios se reclaman en Pilatos, Derek o el Restaurante con tu cédula y tu PIN.',
-  PREMIO_OTRA_TIENDA: 'Este premio no se entrega aquí: las prendas se entregan en Pilatos o Derek, y la comida en Pilatos, Derek o el Restaurante.',
+  REDIME_EN_TIENDA: 'Los premios se reclaman en Pilatos o Derek con tu cédula y tu PIN.',
+  PREMIO_OTRA_TIENDA: 'Este premio no se entrega aquí: los premios se entregan en Pilatos o Derek.',
   FACTURA_YA_ACUMULADA: 'Esta factura ya fue registrada antes. No se sumaron puntos.',
   SELLO_HOY: 'Este cliente ya recibió su sello hoy (máximo 1 por día).',
   TARJETA_LLENA: 'La tarjeta ya está completa: entrega el regalo primero.',
-  SIN_ACTIVAR: 'Tu cuenta aún no está activa. Acércate a Pilatos, Derek o el Restaurante con tu cédula para activarla y crear tu PIN.',
+  SIN_ACTIVAR: 'Tu cuenta aún no está activa. Acércate a Pilatos o Derek con tu cédula para activarla y crear tu PIN.',
   YA_ACTIVO: 'Este cliente ya tiene su cuenta activa.',
   CELULAR_INVALIDO: 'Escribe un celular válido.',
   NACIMIENTO_INVALIDO: 'Revisa la fecha de nacimiento.',
@@ -217,7 +218,7 @@ function clientLogin() {
       <button class="btn coral block" style="height:56px;font-size:17px">Entrar</button>
       ${botonInstalar()}
       ${tarjetaNotifLogin()}
-      <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos, Derek o el Restaurante con tu cédula.</p><p class="center small" style="margin:6px 0 0"><a href="#" data-politicas style="color:#fff;font-weight:700">Términos y condiciones · Tratamiento de datos</a></p>
+      <div style="flex:1;min-height:120px"></div><p class="center small" style="margin:0;color:#fff">¿Aún no estás inscrito u olvidaste tu PIN? Acércate a Pilatos o Derek con tu cédula.</p><p class="center small" style="margin:6px 0 0"><a href="#" data-politicas style="color:#fff;font-weight:700">Términos y condiciones · Tratamiento de datos</a></p>
     </form>
   </div>`;
   const bn = $('#notif-login'); if (bn) bn.onclick = async () => { try { const r = await Notification.requestPermission(); if (r === 'granted') { $('#notif-card').outerHTML = '<div class="card" style="background:#E7F7F1;border-color:#0F7A63;padding:12px 14px;position:relative;z-index:1"><b style="color:#0F7A63">✓ Notificaciones activadas.</b> <span class="small">Ahora entra con tu cédula y tu PIN.</span></div>'; $('#ced').focus(); } else toast('No se activaron. Puedes activarlas luego desde Inicio.', true); } catch { toast('Este celular no permite notificaciones.', true); } };
@@ -303,7 +304,7 @@ async function clientInicio() {
     <div class="pending stack" style="gap:8px">
       <div class="row between"><b>${s.tipo === 'sellos' ? 'Regalo de sellos' : esc(s.premio)}</b>${s.tipo === 'premio' ? `<span class="pill navy">${num(s.puntos)} pts</span>` : ''}</div>
       ${s.tipo === 'sellos' ? '<span class="small">Reclámalo en la caja del <b>Restaurante</b> con tu cédula y tu PIN.</span><button class="btn ghost sm" data-cancel="' + s.id + '" style="align-self:flex-start">Cancelar solicitud</button>'
-        : `<span class="small">Reclámala en ${s.tienda === 'RESTAURANTE' || s.tienda === 'PUNTO DULCE' ? 'el <b>Restaurante</b>' : '<b>Pilatos</b> o <b>Derek</b>'}. Te quedan <b data-hasta="${esc(s.expira_en)}">${restante(s.expira_en)}</b></span>
+        : `<span class="small">Reclámala en <b>Pilatos</b> o <b>Derek</b>. Te quedan <b data-hasta="${esc(s.expira_en)}">${restante(s.expira_en)}</b></span>
         <a class="btn coral sm" href="#/canje/${s.id}" style="align-self:flex-start">Ver mi solicitud</a>`}
     </div>`).join('');
   app.innerHTML = `
@@ -375,7 +376,7 @@ async function clientPremios() {
     <div class="row between"><h1 style="font-size:24px;font-weight:800">Premios</h1><span class="pill navy" style="font-size:13px;padding:6px 14px">${num(d.puntos)} pts</span></div>
     ${reservado ? `<p class="small muted" style="margin:0">Tienes ${num(reservado)} pts apartados en premios por reclamar.</p>` : ''}
     ${items}
-    <p class="small muted center" style="margin:0">Al redimir tienes <b>24 horas</b> para reclamarlo: las prendas en <b>Pilatos</b> o <b>Derek</b>, y la comida en <b>Pilatos</b>, <b>Derek</b> o el <b>Restaurante</b>.</p>
+    <p class="small muted center" style="margin:0">Al redimir tienes <b>24 horas</b> para reclamarlo: en <b>Pilatos</b> o <b>Derek</b>.</p>
   </div>${tabbar('premios')}</div>`;
   $$('[data-quiero]').forEach((b) => b.onclick = async () => {
     if (!confirm(`¿Quieres redimir "${b.dataset.nombre}"? Tendrás 24 horas para reclamarlo.`)) return;
@@ -505,6 +506,8 @@ async function staffRoute(view) {
   const adminOnly = ['diario', 'helados', 'alertas', 'dashboard', 'informe', 'clientes', 'transacciones', 'uso', 'cumpleanos', 'premios', 'cupones', 'mensajes', 'ajustes'];
   if (!isAdmin && adminOnly.includes(view)) view = 'acumular';
   if (view === 'mis' && !verMisMovs()) view = 'acumular';
+  // El Restaurante solo marca sellos
+  if (soloSellos()) view = 'sellos';
   // Cada pantalla empieza en blanco (sin la cédula del cliente anterior), salvo justo después de inscribir o activar
   if (!mantenerFicha) ficha = null;
   mantenerFicha = false;
@@ -589,7 +592,8 @@ function staffShell(view) {
   const L = (v, icon, label) => `<a href="#/personal/${v}" ${view === v ? 'aria-current="page"' : ''}>${ic(icon, 20)}${label}</a>`;
   const side = isAdmin
     ? `<nav class="side admin" aria-label="Menú">${L('dashboard', 'chart', 'Dashboard')}${L('diario', 'chart', 'Informe diario')}${L('informe', 'chart', 'Informe mensual')}${L('transacciones', 'chart', 'Transacciones')}${L('clientes', 'users', 'Clientes')}${L('uso', 'users', 'Uso de la app')}${L('cumpleanos', 'gift', 'Cumpleaños del mes')}${L('helados', 'chart', 'Helados de cumpleaños')}${L('premios', 'gift', 'Premios')}${L('cupones', 'ticket', 'Cupones')}${L('mensajes', 'send', 'Mensajes')}${L('alertas', 'bell', 'Alertas<span class="pill" id="al-badge" style="background:var(--coral);color:#fff;margin-left:auto;padding:2px 9px;display:none"></span>')}${L('ajustes', 'gear', 'Ajustes')}<div class="sep"></div>${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('nuevo', 'user', 'Cliente nuevo')}${L('redimir', 'gift', 'Entregar premio')}${L('helado', 'gift', 'Helado cumpleaños')}</nav>`
-    : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}${tiendaNombre(perfil.tienda_id) === 'RESTAURANTE' ? L('helado', 'gift', 'Helado cumpleaños') : ''}${verMisMovs() ? L('mis', 'chart', 'Transacciones') : ''}</nav>`;
+    : soloSellos() ? `<nav class="side" aria-label="Acciones">${L('sellos', 'check', 'Marcar sello')}</nav>`
+    : `<nav class="side" aria-label="Acciones">${L('nuevo', 'user', 'Cliente nuevo')}${L('acumular', 'plus', 'Acumular')}${L('sellos', 'check', 'Marcar sello')}${L('redimir', 'gift', 'Entregar premio')}${verMisMovs() ? L('mis', 'chart', 'Transacciones') : ''}</nav>`;
   const tn = tiendaNombre(perfil.tienda_id);
   app.innerHTML = `
   <div class="staff">
@@ -1034,6 +1038,7 @@ async function vUso(box) {
   ver();
 }
 // Cajas que ven sus propias transacciones (por ahora Pilatos y Derek)
+const soloSellos = () => perfil && perfil.rol !== 'admin' && tiendaNombre(perfil.tienda_id) === 'RESTAURANTE';
 const verMisMovs = () => perfil && perfil.rol !== 'admin' && ['PILATOS', 'DEREK'].includes(tiendaNombre(perfil.tienda_id));
 async function vMisMovs(box) {
   const hoyS = iso(new Date()), min = (() => { const d = new Date(); d.setDate(d.getDate() - 31); return iso(d); })();
