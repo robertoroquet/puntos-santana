@@ -465,7 +465,7 @@ async function clientMensajes() {
     <h1 style="font-size:24px;font-weight:800">Mensajes</h1>
     ${list.map((m, i) => `<div class="card msg" style="${m.leido ? '' : 'border-color:#FCD9D2'}"><div class="ic" style="background:${colors[i % 4]};color:#fff">${ic('bell', 20, 2.2)}</div>
       <div class="stack" style="gap:2px;flex:1;min-width:0"><div class="row between" style="gap:8px;align-items:flex-start"><b style="font-size:14px">${esc(m.titulo)}</b><span class="small muted" style="flex:0 0 auto">${fdate(m.enviado_en)}</span></div>
-      <span class="small muted" style="white-space:pre-line">${esc(m.cuerpo)}</span></div></div>`).join('') || '<div class="empty">Aún no tienes mensajes.</div>'}
+      <span class="small muted" style="white-space:pre-line">${esc(m.cuerpo)}</span>${m.imagen_url ? `<img src="${esc(m.imagen_url)}" alt="" loading="lazy" style="width:100%;max-height:320px;object-fit:cover;border-radius:12px;margin-top:8px">` : ''}</div></div>`).join('') || '<div class="empty">Aún no tienes mensajes.</div>'}
   </div>${tabbar('mensajes')}</div>`;
 }
 
@@ -1655,6 +1655,7 @@ async function vMensajes(box) {
       <h2 style="font-size:20px;font-weight:800">Enviar mensaje</h2>
       <div class="field solo-normal"><label for="m-t">Título *</label><input class="input" id="m-t" maxlength="60" value="${esc(pre.titulo || '')}"></div>
       <div class="field solo-normal"><label for="m-c">Mensaje *</label><textarea class="input" id="m-c" rows="3" maxlength="300">${esc(pre.cuerpo || '')}</textarea></div>
+      <div class="field solo-normal"><label for="m-f">Foto (opcional)</label><input class="input" id="m-f" type="file" accept="image/*" style="padding:10px;height:auto"><span class="small muted">JPG o PNG. Se ve grande en Android; en iPhone se ve pequeña o al abrir la notificación.</span><button type="button" class="btn ghost sm hidden" id="m-fq" style="align-self:flex-start">Quitar foto</button></div>
       <div class="stack" style="gap:8px"><span style="font-size:13px;font-weight:600">Enviar a</span><div class="row wrap" style="gap:8px" id="segs"></div>
       <select class="input hidden" id="m-ti" aria-label="Tienda">${tiendas.map((t) => `<option>${esc(t.nombre)}</option>`).join('')}</select>
       <div class="stack hidden" id="eleg" style="gap:8px;background:#FBF7EE;border:1px solid var(--line);border-radius:16px;padding:12px">
@@ -1664,7 +1665,7 @@ async function vMensajes(box) {
       </div></div>
       <div class="hidden" id="cerca-box"></div>
       <div class="stack solo-normal" style="gap:6px"><span class="small muted">Vista previa</span>
-        <div style="background:var(--navy);border-radius:18px;padding:12px;display:flex;gap:10px;color:#fff;max-width:380px"><img src="${LOGO}" alt="" style="width:36px;height:36px;border-radius:9px;object-fit:cover"><div class="stack" style="gap:2px;min-width:0"><span class="small" style="color:#CFE9F0;font-weight:700">PUNTOS SANTANA · ahora</span><b style="font-size:13px" id="pv-t"></b><span class="small" style="color:#E3EAF7" id="pv-c"></span></div></div></div>
+        <div style="background:var(--navy);border-radius:18px;padding:12px;display:flex;gap:10px;color:#fff;max-width:380px"><img src="${LOGO}" alt="" style="width:36px;height:36px;border-radius:9px;object-fit:cover"><div class="stack" style="gap:2px;min-width:0"><span class="small" style="color:#CFE9F0;font-weight:700">PUNTOS SANTANA · ahora</span><b style="font-size:13px" id="pv-t"></b><span class="small" style="color:#E3EAF7" id="pv-c"></span><img id="pv-i" alt="" class="hidden" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;margin-top:6px"></div></div></div>
       <button class="btn coral solo-normal" style="align-self:flex-start">Enviar ahora</button>
     </form>
     <section class="card stack" id="hist"><h2 style="font-size:20px;font-weight:800">Enviados</h2><div class="empty">Cargando…</div></section>
@@ -1684,6 +1685,9 @@ async function vMensajes(box) {
     $$('[data-agrega]').forEach((b) => b.onclick = () => { const c = ultRes.find((x) => x.id === b.dataset.agrega); if (c) elegidos.set(c.id, c); drawSel(); buscarE(true); });
   };
   drawSeg(); pv(); $('#m-t').oninput = pv; $('#m-c').oninput = pv;
+  let fotoUrl = null;
+  const pvI = () => { const f = $('#m-f').files[0]; const im = $('#pv-i'); if (fotoUrl) { URL.revokeObjectURL(fotoUrl); fotoUrl = null; } if (f) { fotoUrl = URL.createObjectURL(f); im.src = fotoUrl; } im.classList.toggle('hidden', !f); $('#m-fq').classList.toggle('hidden', !f); };
+  $('#m-f').onchange = pvI; $('#m-fq').onclick = () => { $('#m-f').value = ''; pvI(); };
   $('#e-b').onclick = () => buscarE();
   $('#e-q').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); buscarE(); } };
   drawSel();
@@ -1694,12 +1698,15 @@ async function vMensajes(box) {
     if (seg === 'elegidos' && !elegidos.size) return toast('Agrega al menos un cliente.', true);
     if (!confirm('¿Enviar este mensaje?')) return;
     const b = $('button[type=submit],button:not([type])', $('#mf')); b.disabled = true;
-    try { const r = await rpc('admin_enviar_mensaje', { p_titulo: t, p_cuerpo: c, p_segmento: seg, p_tienda: seg === 'tienda' ? $('#m-ti').value : null, p_clientes: seg === 'elegidos' ? [...elegidos.keys()] : null }); toast(`Mensaje enviado a ${num(r.destinatarios)} clientes.`); vMensajes(box); }
-    catch (er) { toast(errText(er), true); b.disabled = false; }
+    try {
+      const file = $('#m-f').files[0]; let img = null;
+      if (file) { b.textContent = 'Subiendo foto…'; img = await subirFotoPremio(file); }
+      const r = await rpc('admin_enviar_mensaje', { p_titulo: t, p_cuerpo: c, p_segmento: seg, p_tienda: seg === 'tienda' ? $('#m-ti').value : null, p_imagen: img, p_clientes: seg === 'elegidos' ? [...elegidos.keys()] : null }); toast(`Mensaje enviado a ${num(r.destinatarios)} clientes.`); vMensajes(box); }
+    catch (er) { toast(errText(er), true); b.disabled = false; b.textContent = 'Enviar ahora'; }
   };
-  const { data, error } = await sb.from('mensajes').select('id,titulo,cuerpo,segmento,segmento_tienda,enviado_en,mensajes_destinatarios(count)').order('enviado_en', { ascending: false }).limit(50);
+  const { data, error } = await sb.from('mensajes').select('id,titulo,cuerpo,imagen_url,segmento,segmento_tienda,enviado_en,mensajes_destinatarios(count)').order('enviado_en', { ascending: false }).limit(50);
   const segName = { ...Object.fromEntries(SEG), cumpleanos: 'Cumpleaños del mes', cerca_premio: 'Recompra (cerca de un premio)', elegidos: 'Clientes elegidos', bienvenida: 'Bienvenida desde caja' };
-  $('#hist').innerHTML = '<h2 style="font-size:20px;font-weight:800">Enviados</h2>' + (error ? `<div class="empty">${errText(error)}</div>` : (data.map((m) => `<div style="border-top:1px solid var(--line);padding-top:10px" class="stack" ><div class="row between" style="gap:8px;align-items:flex-start"><b>${esc(m.titulo)}</b><span class="small muted" style="flex:0 0 auto">${fdate(m.enviado_en)}</span></div><span class="small muted">${esc(m.cuerpo)}</span><span class="small">${esc(segName[m.segmento] || m.segmento)}${m.segmento_tienda ? ': ' + esc(m.segmento_tienda) : ''} · ${num(m.mensajes_destinatarios?.[0]?.count || 0)} clientes</span></div>`).join('') || '<div class="empty">Aún no has enviado mensajes.</div>'));
+  $('#hist').innerHTML = '<h2 style="font-size:20px;font-weight:800">Enviados</h2>' + (error ? `<div class="empty">${errText(error)}</div>` : (data.map((m) => `<div style="border-top:1px solid var(--line);padding-top:10px" class="stack" ><div class="row between" style="gap:8px;align-items:flex-start"><b>${esc(m.titulo)}</b><span class="small muted" style="flex:0 0 auto">${fdate(m.enviado_en)}</span></div><span class="small muted">${esc(m.cuerpo)}</span>${m.imagen_url ? `<img src="${esc(m.imagen_url)}" alt="" style="width:120px;height:80px;object-fit:cover;border-radius:10px">` : ''}<span class="small">${esc(segName[m.segmento] || m.segmento)}${m.segmento_tienda ? ': ' + esc(m.segmento_tienda) : ''} · ${num(m.mensajes_destinatarios?.[0]?.count || 0)} clientes</span></div>`).join('') || '<div class="empty">Aún no has enviado mensajes.</div>'));
 }
 
 async function vAjustes(box) {
